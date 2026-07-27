@@ -81,6 +81,17 @@ public class ServerHelloPreparator extends HelloMessagePreparator<ServerHelloMes
 
         if (selectedCipherSuite != null && selectedCipherSuite.isTls13()) {
             forbiddenExtensionTypes.addAll(ExtensionType.getNonTls13Extensions());
+            // getNonTls13Extensions() lists only the extensions TLS 1.3 dropped entirely, so
+            // an extension that is still valid in TLS 1.3 but belongs in EncryptedExtensions
+            // (server_name, for example) is echoed into the ServerHello as soon as the client
+            // proposes it. A client that checks receives a recognized extension in a message
+            // it is not specified for and aborts with illegal_parameter (RFC 8446 section
+            // 4.2). Restrict the selection to the ServerHello-permitted set instead.
+            for (ExtensionType extensionType : ExtensionType.values()) {
+                if (!ExtensionType.allowedInServerHello(extensionType)) {
+                    forbiddenExtensionTypes.add(extensionType);
+                }
+            }
         } else {
             forbiddenExtensionTypes.addAll(ExtensionType.getTls13OnlyExtensions());
         }

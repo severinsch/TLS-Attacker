@@ -10,16 +10,22 @@ package de.rub.nds.tlsattacker.core.protocol.preparator;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import de.rub.nds.modifiablevariable.util.DataConverter;
+import de.rub.nds.tlsattacker.core.config.Config;
 import de.rub.nds.tlsattacker.core.constants.CipherSuite;
 import de.rub.nds.tlsattacker.core.constants.CompressionMethod;
+import de.rub.nds.tlsattacker.core.constants.ExtensionType;
 import de.rub.nds.tlsattacker.core.constants.ProtocolVersion;
 import de.rub.nds.tlsattacker.core.protocol.message.ServerHelloMessage;
+import de.rub.nds.tlsattacker.core.protocol.message.extension.ExtensionMessage;
 import de.rub.nds.tlsattacker.util.FixedTimeProvider;
 import de.rub.nds.tlsattacker.util.TimeHelper;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 public class ServerHelloPreparatorTest
@@ -69,5 +75,33 @@ public class ServerHelloPreparatorTest
         assertEquals(6, (int) message.getSessionIdLength().getValue());
         assertEquals(0, message.getExtensionBytes().getValue().length);
         assertEquals(0, (int) message.getExtensionsLength().getValue());
+    }
+
+    /**
+     * A TLS 1.3 ServerHello may only carry the extensions listed for it in RFC 8446 section 4.2.
+     * server_name is valid in TLS 1.3 but belongs in EncryptedExtensions, so proposing it must not
+     * get it echoed into the ServerHello.
+     */
+    @Test
+    public void testTls13ServerHelloOmitsEncryptedExtensionsOnlyExtensions() {
+        Config config = tlsContext.getConfig();
+        config.setHighestProtocolVersion(ProtocolVersion.TLS13);
+        config.setRespectClientProposedExtensions(true);
+        config.setAddServerNameIndicationExtension(true);
+        config.setAddKeyShareExtension(true);
+        config.setDefaultServerSupportedCipherSuites(CipherSuite.TLS_AES_128_GCM_SHA256);
+        tlsContext.setClientSupportedCipherSuites(CipherSuite.TLS_AES_128_GCM_SHA256);
+        tlsContext
+                .getProposedExtensions()
+                .addAll(List.of(ExtensionType.SERVER_NAME_INDICATION, ExtensionType.KEY_SHARE));
+
+        preparator.prepare();
+
+        List<ExtensionType> selectedExtensions =
+                message.getExtensions().stream()
+                        .map(ExtensionMessage::getExtensionTypeConstant)
+                        .collect(Collectors.toList());
+        assertTrue(selectedExtensions.contains(ExtensionType.KEY_SHARE));
+        assertFalse(selectedExtensions.contains(ExtensionType.SERVER_NAME_INDICATION));
     }
 }

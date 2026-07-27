@@ -284,6 +284,27 @@ public enum ExtensionType {
         }
     }
 
+    /**
+     * Whether an extension may appear in a TLS 1.3 ServerHello. RFC 8446 section 4.2 permits only
+     * key_share, pre_shared_key and supported_versions there, plus cookie in a HelloRetryRequest,
+     * which is itself a ServerHello (RFC 8446 section 4.1.4). Everything else a server wants to
+     * answer belongs in EncryptedExtensions.
+     *
+     * @param extType The extension type to check
+     * @return true if the extension is permitted in a TLS 1.3 ServerHello
+     */
+    public static boolean allowedInServerHello(ExtensionType extType) {
+        switch (extType) {
+            case KEY_SHARE:
+            case PRE_SHARED_KEY:
+            case SUPPORTED_VERSIONS:
+            case COOKIE:
+                return true;
+            default:
+                return false;
+        }
+    }
+
     public static List<ExtensionType> getNonTls13Extensions() {
         List<ExtensionType> list = new LinkedList<>();
         list.add(EXTENDED_MASTER_SECRET);
