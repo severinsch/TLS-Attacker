@@ -53,6 +53,22 @@ public class QuicTransportParametersExtensionsPreparator
                             chooser.getContext()
                                     .getQuicContext()
                                     .getFirstDestinationConnectionId()));
+            // Required after a Retry (RFC 9000 section 18.2).
+            byte[] retrySourceConnectionId =
+                    chooser.getContext().getQuicContext().getRetrySourceConnectionId();
+            boolean configured =
+                    quicTransportEntrys.stream()
+                            .anyMatch(
+                                    entry ->
+                                            entry.getEntryType()
+                                                    == QuicTransportParameterEntryTypes
+                                                            .RETRY_SOURCE_CONNECTION_ID);
+            if (retrySourceConnectionId != null && !configured) {
+                quicTransportEntrys.add(
+                        new QuicTransportParameterEntry(
+                                QuicTransportParameterEntryTypes.RETRY_SOURCE_CONNECTION_ID,
+                                retrySourceConnectionId));
+            }
         }
         SilentByteArrayOutputStream stream = new SilentByteArrayOutputStream();
 

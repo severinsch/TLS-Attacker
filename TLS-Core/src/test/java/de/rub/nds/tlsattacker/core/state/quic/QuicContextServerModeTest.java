@@ -122,6 +122,49 @@ public class QuicContextServerModeTest {
     }
 
     @Test
+    public void testRetryChangesTheInitialSecretsConnectionIdOnly() throws Exception {
+        byte[] originalDcid = new byte[] {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
+        byte[] retryScid = new byte[] {0x11, 0x12, 0x13, 0x14};
+
+        Config config = new Config();
+        new QuicDelegate(true).applyDelegate(config);
+        QuicContext quicContext = new State(config).getContext().getQuicContext();
+
+        quicContext.setFirstDestinationConnectionId(originalDcid);
+        quicContext.setInitialSecretsInitialized(false);
+        QuicPacketCryptoComputations.calculateInitialSecrets(quicContext);
+        byte[] preRetryClientKey = quicContext.getInitialClientKey();
+
+        // A Retry only redirects the key derivation
+        quicContext.setInitialSecretsConnectionId(retryScid);
+        quicContext.setInitialSecretsInitialized(false);
+        QuicPacketCryptoComputations.calculateInitialSecrets(quicContext);
+
+        assertArrayEquals(
+                originalDcid,
+                quicContext.getFirstDestinationConnectionId(),
+                "A Retry must not change the Original Destination Connection ID");
+        assertArrayEquals(
+                retryScid,
+                quicContext.getInitialSecretsConnectionId(),
+                "Initial secrets must derive from the Retry Source Connection ID afterwards");
+        assertFalse(
+                java.util.Arrays.equals(preRetryClientKey, quicContext.getInitialClientKey()),
+                "Initial secrets must actually be re-derived from the new connection ID");
+    }
+
+    @Test
+    public void testInitialSecretsConnectionIdDefaultsToTheOriginalDcid() {
+        Config config = new Config();
+        new QuicDelegate(true).applyDelegate(config);
+        QuicContext quicContext = new State(config).getContext().getQuicContext();
+
+        assertArrayEquals(
+                quicContext.getFirstDestinationConnectionId(),
+                quicContext.getInitialSecretsConnectionId());
+    }
+
+    @Test
     public void testResetReturnsToUninitializedInServerMode() {
         Config config = new Config();
         new QuicDelegate(true).applyDelegate(config);

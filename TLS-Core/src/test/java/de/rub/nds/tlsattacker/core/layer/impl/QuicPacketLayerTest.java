@@ -184,6 +184,25 @@ public class QuicPacketLayerTest extends AbstractLayerTest {
     }
 
     @Test
+    public void testSendingARetryAsServerRekeysTheInitialSecrets() throws IOException {
+        prepareServerSideTest();
+        setUpInitialSecrets();
+        byte[] keyBeforeRetry = quicContext.getInitialServerKey();
+        QuicPacketLayer quicPacketLayer =
+                (QuicPacketLayer) tlsContext.getLayerStack().getLayer(QuicPacketLayer.class);
+
+        quicPacketLayer.setLayerConfiguration(
+                new SpecificSendLayerConfiguration<>(
+                        ImplementedLayers.QUICPACKET, List.of(new RetryPacket())));
+        quicPacketLayer.sendConfiguration();
+
+        assertArrayEquals(sourceConnectionId, quicContext.getRetrySourceConnectionId());
+        assertArrayEquals(sourceConnectionId, quicContext.getInitialSecretsConnectionId());
+        assertArrayEquals(destinationConnectionId, quicContext.getFirstDestinationConnectionId());
+        assertTrue(!Arrays.equals(keyBeforeRetry, quicContext.getInitialServerKey()));
+    }
+
+    @Test
     public void testSendData() throws IOException {
         setUpInitialSecrets();
         ArrayList<byte[]> quicPackets = getQuicPacketsPayload();

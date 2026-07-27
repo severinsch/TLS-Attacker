@@ -37,6 +37,7 @@ import de.rub.nds.tlsattacker.core.quic.packet.VersionNegotiationPacket;
 import de.rub.nds.tlsattacker.core.quic.packet.ZeroRTTPacket;
 import de.rub.nds.tlsattacker.core.state.Context;
 import de.rub.nds.tlsattacker.core.state.quic.QuicContext;
+import de.rub.nds.tlsattacker.transport.ConnectionEndType;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.PortUnreachableException;
@@ -472,7 +473,20 @@ public class QuicPacketLayer
 
     private byte[] writeRetryPacket(RetryPacket packet) {
         packet.getPreparator(context).prepare();
-        return packet.getSerializer(context).serialize();
+        byte[] serializedPacket = packet.getSerializer(context).serialize();
+        if (quicContext.getConnection().getLocalConnectionEndType() == ConnectionEndType.SERVER) {
+            // The client's next Initial is keyed by our Retry SCID (RFC 9001 section 5.2).
+            byte[] retrySourceConnectionId = packet.getSourceConnectionId().getValue();
+            quicContext.setRetrySourceConnectionId(retrySourceConnectionId);
+            quicContext.setInitialSecretsConnectionId(retrySourceConnectionId);
+            try {
+                QuicPacketCryptoComputations.calculateInitialSecrets(quicContext);
+            } catch (NoSuchAlgorithmException | CryptoException e) {
+                LOGGER.warn("Could not derive the Initial secrets after sending a Retry: ", e);
+                quicContext.setInitialSecretsInitialized(false);
+            }
+        }
+        return serializedPacket;
     }
 
     private byte[] writeVersionNegotiationPacket(VersionNegotiationPacket packet) {

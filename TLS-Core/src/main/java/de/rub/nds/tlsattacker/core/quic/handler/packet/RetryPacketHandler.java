@@ -46,8 +46,11 @@ public class RetryPacketHandler extends LongHeaderPacketHandler<RetryPacket> {
 
         // update quic context
         quicContext.setInitialPacketToken(packet.getRetryToken().getValue());
+        quicContext.setRetrySourceConnectionId(packet.getSourceConnectionId().getValue());
         if (!quicContext.getConfig().isEchoQuic()) {
-            quicContext.setFirstDestinationConnectionId(packet.getSourceConnectionId().getValue());
+            // Only the Initial secrets move to the Retry SCID; the original DCID stays (RFC 9001
+            // section 5.2).
+            quicContext.setInitialSecretsConnectionId(packet.getSourceConnectionId().getValue());
             quicContext.setDestinationConnectionId(packet.getSourceConnectionId().getValue());
         }
 

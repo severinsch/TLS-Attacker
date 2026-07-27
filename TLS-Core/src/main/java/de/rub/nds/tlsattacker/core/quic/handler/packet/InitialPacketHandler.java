@@ -26,7 +26,7 @@ public class InitialPacketHandler extends LongHeaderPacketHandler<InitialPacket>
 
     @Override
     public void adjustContext(InitialPacket packet) {
-        // set connecteion ID for initial key derivation only once
+        // the original DCID, set once by the first Initial (RFC 9000 section 18.2)
         if (quicContext.getFirstDestinationConnectionId() == null) {
             quicContext.setFirstDestinationConnectionId(
                     packet.getDestinationConnectionId().getValue());
@@ -36,6 +36,9 @@ public class InitialPacketHandler extends LongHeaderPacketHandler<InitialPacket>
         // update quic keys
         try {
             if (!quicContext.isInitialSecretsInitialized()) {
+                // the DCID of this Initial, which changes after a Retry (RFC 9001 section 5.2)
+                quicContext.setInitialSecretsConnectionId(
+                        packet.getDestinationConnectionId().getValue());
                 QuicPacketCryptoComputations.calculateInitialSecrets(quicContext);
             }
         } catch (NoSuchAlgorithmException | CryptoException e) {
