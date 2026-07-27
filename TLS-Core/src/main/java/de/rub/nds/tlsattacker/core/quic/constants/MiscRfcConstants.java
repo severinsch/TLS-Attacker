@@ -16,6 +16,12 @@ public class MiscRfcConstants {
 
     public static final int HEADER_PROTECTION_SAMPLE_LENGTH = 16;
 
+    /**
+     * Maximum length of a connection ID in QUIC version 1, in bytes (RFC 9000 section 17.2). A
+     * zero-length connection ID is also permitted, so valid lengths span 0..20.
+     */
+    public static final int MAX_CONNECTION_ID_LENGTH = 20;
+
     // TODO: actually rfc constant?
     public static final int AUTH_TAG_LENGTH = 16;
 

@@ -8,6 +8,7 @@
  */
 package de.rub.nds.tlsattacker.core.layer.impl;
 
+import de.rub.nds.modifiablevariable.util.DataConverter;
 import de.rub.nds.protocol.exception.CryptoException;
 import de.rub.nds.protocol.exception.EndOfStreamException;
 import de.rub.nds.protocol.exception.TimeoutException;
@@ -35,8 +36,10 @@ import de.rub.nds.tlsattacker.core.quic.packet.RetryPacket;
 import de.rub.nds.tlsattacker.core.quic.packet.StatelessResetPseudoPacket;
 import de.rub.nds.tlsattacker.core.quic.packet.VersionNegotiationPacket;
 import de.rub.nds.tlsattacker.core.quic.packet.ZeroRTTPacket;
+import de.rub.nds.tlsattacker.core.quic.parser.packet.OneRTTPacketParser;
 import de.rub.nds.tlsattacker.core.state.Context;
 import de.rub.nds.tlsattacker.core.state.quic.QuicContext;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.PortUnreachableException;
@@ -516,13 +519,92 @@ public class QuicPacketLayer
     }
 
     private OneRTTPacket decryptOneRTTPacket(OneRTTPacket packet) throws CryptoException {
+        // Snapshot the bytes after the flags byte, and the length the parser assumed, so the
+        // packet can be re-parsed with a different Destination Connection ID length if this one
+        // turns out to be wrong. See recoverOneRTTPacketWithAlternateDcidLength.
+        byte protectedFlags = packet.getProtectedFlags().getValue();
+        byte[] postFlagBytes =
+                DataConverter.concatenate(
+                        packet.getDestinationConnectionId().getValue(),
+                        packet.getProtectedPacketNumberAndPayload().getValue());
+        int parsedDcidLength = packet.getDestinationConnectionIdLength().getValue() & 0xFF;
+        try {
+            finishReceivingOneRTTPacket(packet);
+            return packet;
+        } catch (CryptoException | ArrayIndexOutOfBoundsException primaryFailure) {
+            OneRTTPacket recovered =
+                    recoverOneRTTPacketWithAlternateDcidLength(
+                            protectedFlags, postFlagBytes, parsedDcidLength);
+            if (recovered != null) {
+                return recovered;
+            }
+            if (primaryFailure instanceof CryptoException cryptoException) {
+                throw cryptoException;
+            }
+            throw new CryptoException(
+                    "Could not decrypt " + QuicPacketType.ONE_RTT_PACKET.getName(), primaryFailure);
+        }
+    }
+
+    /**
+     * Header protection removal, decryption and context update for a parsed 1-RTT packet, shared by
+     * the normal receive path and the alternate DCID length recovery. Throws before mutating the
+     * context if the packet does not decrypt.
+     */
+    private void finishReceivingOneRTTPacket(OneRTTPacket packet) throws CryptoException {
         decryptor.removeHeaderProtectionOneRTT(packet);
         packet.convertCompleteProtectedHeader();
         decryptor.decryptOneRTTPacket(packet);
         quicContext.addReceivedOneRTTPacketNumber(packet.getPlainPacketNumber());
         packet.getHandler(context).adjustContext(packet);
         addProducedContainer(packet);
-        return packet;
+    }
+
+    /**
+     * Recovers a 1-RTT packet whose Destination Connection ID length differs from the one recorded
+     * locally. A short header carries no DCID length field (RFC 9000 section 17.3), so the length
+     * is taken from the connection ID the endpoint issued to its peer. That is wrong once the peer
+     * migrates to another issued connection ID, or retires down to a zero-length one, and header
+     * protection then samples the wrong bytes. Re-parse with each permitted length (0..20, RFC 9000
+     * section 17.2) and keep the candidate whose AEAD tag authenticates; a wrong length is
+     * astronomically unlikely to be accepted, so genuine decryption failures are still reported.
+     *
+     * @param protectedFlags the packet's first, still header protected, byte
+     * @param postFlagBytes the packet bytes after the first one, independent of the DCID length
+     *     assumed during the first parse
+     * @param alreadyTriedLength the DCID length of the first parse, skipped here
+     * @return the recovered, decrypted packet, or null if no length authenticates
+     */
+    private OneRTTPacket recoverOneRTTPacketWithAlternateDcidLength(
+            byte protectedFlags, byte[] postFlagBytes, int alreadyTriedLength) {
+        for (int candidateLength = 0;
+                candidateLength <= MiscRfcConstants.MAX_CONNECTION_ID_LENGTH;
+                candidateLength++) {
+            if (candidateLength == alreadyTriedLength || candidateLength > postFlagBytes.length) {
+                continue;
+            }
+            OneRTTPacket candidate = new OneRTTPacket(protectedFlags);
+            try {
+                new OneRTTPacketParser(
+                                new ByteArrayInputStream(postFlagBytes),
+                                quicContext,
+                                candidateLength)
+                        .parse(candidate);
+                if (!candidate.canSampleHeaderProtection()) {
+                    continue;
+                }
+                finishReceivingOneRTTPacket(candidate);
+                LOGGER.debug(
+                        "Recovered 1-RTT packet with Destination Connection ID length {} instead of the recorded {}",
+                        candidateLength,
+                        alreadyTriedLength);
+                return candidate;
+            } catch (RuntimeException wrongLengthGuess) {
+                // Wrong length: header protection or the AEAD tag does not authenticate. A fresh
+                // packet was parsed, so nothing needs undoing before trying the next candidate.
+            }
+        }
+        return null;
     }
 
     private RetryPacket readRetryPacket(int flags, InputStream dataStream) {
