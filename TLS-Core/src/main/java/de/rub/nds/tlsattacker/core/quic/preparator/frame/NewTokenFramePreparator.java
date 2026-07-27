@@ -29,7 +29,7 @@ public class NewTokenFramePreparator extends QuicFramePreparator<NewTokenFrame> 
     }
 
     protected void prepareToken(NewTokenFrame frame) {
-        frame.setToken(chooser.getContext().getConfig().getDefaultQuicPathChallange());
+        frame.setToken(chooser.getContext().getConfig().getDefaultQuicNewToken());
         LOGGER.debug("Token: {}", frame.getToken().getValue());
     }
 
