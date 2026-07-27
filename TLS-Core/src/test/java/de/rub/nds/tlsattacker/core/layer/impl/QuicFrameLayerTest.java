@@ -8,6 +8,7 @@
  */
 package de.rub.nds.tlsattacker.core.layer.impl;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -20,6 +21,7 @@ import de.rub.nds.tlsattacker.core.layer.LayerStack;
 import de.rub.nds.tlsattacker.core.layer.SpecificSendLayerConfiguration;
 import de.rub.nds.tlsattacker.core.layer.constant.ImplementedLayers;
 import de.rub.nds.tlsattacker.core.layer.hints.QuicFrameLayerHint;
+import de.rub.nds.tlsattacker.core.layer.stream.HintedInputStream;
 import de.rub.nds.tlsattacker.core.quic.frame.CryptoFrame;
 import de.rub.nds.tlsattacker.core.quic.frame.HandshakeDoneFrame;
 import de.rub.nds.tlsattacker.core.quic.frame.PaddingFrame;
@@ -383,6 +385,57 @@ public class QuicFrameLayerTest extends AbstractLayerTest {
                 64L,
                 frame.getOffsetConfig(),
                 "Without application secrets the Handshake CRYPTO stream continues");
+    }
+
+    @Test
+    public void testGappedCryptoStreamIsWithheldUntilTheHoleIsFilled() throws IOException {
+        QuicFrameLayer frameLayer = tlsContext.getLayerStack().getLayer(QuicFrameLayer.class);
+        // No packet layer, so nothing to acknowledge.
+        quicContext.setTemporarilyDisabledAcks(true);
+
+        // CRYPTO(offset 0, len 4) followed by CRYPTO(offset 8, len 4): bytes 4..8 are missing.
+        transportHandler.setFetchableByte(
+                DataConverter.hexStringToByteArray("06000411111111" + "06080422222222"));
+        frameLayer.receiveData();
+        assertEquals(
+                0,
+                frameLayer.getDataStream().available(),
+                "No CRYPTO data may be passed up while the stream has a hole");
+
+        // The retransmission that fills the hole: CRYPTO(offset 4, len 4).
+        transportHandler.setFetchableByte(DataConverter.hexStringToByteArray("06040433333333"));
+        frameLayer.receiveData();
+        HintedInputStream deliveredStream = frameLayer.getDataStream();
+        byte[] delivered = deliveredStream.readChunk(deliveredStream.available());
+        assertArrayEquals(
+                DataConverter.hexStringToByteArray("11111111" + "33333333" + "22222222"),
+                delivered,
+                "Once gap free, the whole CRYPTO stream is passed up in offset order");
+    }
+
+    @Test
+    public void testOverlappingRetransmittedCryptoFramesAreDeduplicated() throws IOException {
+        QuicFrameLayer frameLayer = tlsContext.getLayerStack().getLayer(QuicFrameLayer.class);
+        // No packet layer, so nothing to acknowledge.
+        quicContext.setTemporarilyDisabledAcks(true);
+
+        transportHandler.setFetchableByte(DataConverter.hexStringToByteArray("06000411111111"));
+        frameLayer.receiveData();
+        HintedInputStream firstStream = frameLayer.getDataStream();
+        assertArrayEquals(
+                DataConverter.hexStringToByteArray("11111111"),
+                firstStream.readChunk(firstStream.available()));
+
+        // A duplicate of the first frame, and CRYPTO(offset 2, len 6) overlapping two delivered
+        // bytes.
+        transportHandler.setFetchableByte(
+                DataConverter.hexStringToByteArray("06000411111111" + "060206111133333333"));
+        frameLayer.receiveData();
+        HintedInputStream secondStream = frameLayer.getDataStream();
+        assertArrayEquals(
+                DataConverter.hexStringToByteArray("33333333"),
+                secondStream.readChunk(secondStream.available()),
+                "Only CRYPTO data beyond the delivered offset may be passed up again");
     }
 
     private static byte[] handshakeMessage(HandshakeMessageType type, int length) {

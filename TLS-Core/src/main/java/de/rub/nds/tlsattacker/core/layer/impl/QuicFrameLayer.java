@@ -349,50 +349,53 @@ public class QuicFrameLayer
             }
             cryptoFrameBuffer.sort(Comparator.comparingLong(frame -> frame.getOffset().getValue()));
 
-            List<CryptoFrame> processedFrames = new ArrayList<>();
-            for (CryptoFrame frame : cryptoFrameBuffer) {
-                long frameOffset = frame.getOffset().getValue();
-                long frameLength = frame.getLength().getValue();
+            // Frames entirely behind the delivered offset are retransmissions (RFC 9000 section
+            // 7.5).
+            long deliveredOffset = nextOffset;
+            cryptoFrameBuffer.removeIf(
+                    frame ->
+                            frame.getOffset().getValue() + frame.getLength().getValue()
+                                    <= deliveredOffset);
 
-                if (frameOffset + frameLength <= nextOffset) {
-                    // All data from this crypto frame has already been passed to the upper layer
-                    processedFrames.add(frame);
-                    continue;
+            if (isCryptoBufferGapFree(nextOffset)) {
+                for (CryptoFrame frame : cryptoFrameBuffer) {
+                    long frameOffset = frame.getOffset().getValue();
+                    byte[] frameData = frame.getCryptoData().getValue();
+
+                    if (frameOffset + frameData.length <= nextOffset) {
+                        // Fully covered by a preceding overlapping frame
+                        continue;
+                    }
+                    if (frameOffset < nextOffset) {
+                        // Partially covered by a preceding overlapping frame
+                        frameData =
+                                Arrays.copyOfRange(
+                                        frameData,
+                                        Math.toIntExact(nextOffset - frameOffset),
+                                        frameData.length);
+                        outputStream.write(frameData);
+                        nextOffset += frameData.length;
+                    } else {
+                        outputStream.write(frameData);
+                        nextOffset = frameOffset + frameData.length;
+                    }
                 }
+                cryptoFrameBuffer.clear();
 
-                // Consecutive frames
-                if (frameOffset == nextOffset) {
-                    outputStream.write(frame.getCryptoData().getValue());
-                    processedFrames.add(frame);
-                    nextOffset = frameOffset + frameLength;
-                } else if (frameOffset <= nextOffset) {
-                    byte[] remainingData =
-                            Arrays.copyOfRange(
-                                    frame.getCryptoData().getValue(),
-                                    Math.toIntExact(nextOffset - frameOffset),
-                                    Math.toIntExact(frameLength));
-                    outputStream.write(remainingData);
-                    processedFrames.add(frame);
-                    nextOffset = frameOffset + frameLength;
+                if (!quicContext.isHandshakeSecretsInitialized()) {
+                    initialPhaseExpectedCryptoFrameOffset = nextOffset;
+                } else if (!quicContext.isApplicationSecretsInitialized()) {
+                    handshakePhaseExpectedCryptoFrameOffset = nextOffset;
+                } else {
+                    applicationPhaseExpectedCryptoFrameOffset = nextOffset;
                 }
-
-                // Frame is not usable right now
-            }
-
-            cryptoFrameBuffer.removeAll(processedFrames);
-            if (!cryptoFrameBuffer.isEmpty()) {
+            } else {
+                // The upper layer keeps no partial-message state, so deliver only a gap-free
+                // stream.
                 LOGGER.warn(
                         "Missing CryptoFrames in buffer: {}, nextOffset={}",
                         cryptoBufferToString(),
                         nextOffset);
-            }
-
-            if (!quicContext.isHandshakeSecretsInitialized()) {
-                initialPhaseExpectedCryptoFrameOffset = nextOffset;
-            } else if (!quicContext.isApplicationSecretsInitialized()) {
-                handshakePhaseExpectedCryptoFrameOffset = nextOffset;
-            } else {
-                applicationPhaseExpectedCryptoFrameOffset = nextOffset;
             }
         }
 
@@ -412,6 +415,27 @@ public class QuicFrameLayer
         currentInputStream.extendStream(outputStream.toByteArray());
 
         outputStream.flush();
+    }
+
+    /**
+     * Whether the buffered CRYPTO frames cover the stream from nextOffset without a hole.
+     *
+     * @param nextOffset the next CRYPTO stream offset not yet passed to the upper layer
+     * @return true if the buffer can be passed up as one contiguous chunk
+     */
+    private boolean isCryptoBufferGapFree(long nextOffset) {
+        // cryptoFrameBuffer is sorted by offset by the caller
+        long coveredUpTo = nextOffset;
+        for (CryptoFrame frame : cryptoFrameBuffer) {
+            if (frame.getOffset().getValue() > coveredUpTo) {
+                return false;
+            }
+            coveredUpTo =
+                    Math.max(
+                            coveredUpTo,
+                            frame.getOffset().getValue() + frame.getLength().getValue());
+        }
+        return true;
     }
 
     private String cryptoBufferToString() {
