@@ -282,9 +282,7 @@ public class QuicFrameLayer
                         case CONNECTION_CLOSE_APPLICATION_FRAME -> new ConnectionCloseFrame(false);
                         case CRYPTO_FRAME -> {
                             recordLayerHint = new RecordLayerHint(ProtocolMessageType.HANDSHAKE);
-                            CryptoFrame cryptoFrame = new CryptoFrame();
-                            cryptoFrameBuffer.add(cryptoFrame);
-                            yield cryptoFrame;
+                            yield new CryptoFrame();
                         }
                         case HANDSHAKE_DONE_FRAME -> new HandshakeDoneFrame();
                         case NEW_CONNECTION_ID_FRAME -> new NewConnectionIdFrame();
@@ -321,6 +319,13 @@ public class QuicFrameLayer
                 isAckEliciting |= frame.isAckEliciting();
                 frame.setFrameType(frameTypeNumber);
                 readDataContainer(frame, context, inputStream);
+                // A truncated CRYPTO frame comes back half-initialized; do not buffer it.
+                if (frame instanceof CryptoFrame cryptoFrame
+                        && cryptoFrame.getOffset() != null
+                        && cryptoFrame.getLength() != null
+                        && cryptoFrame.getCryptoData() != null) {
+                    cryptoFrameBuffer.add(cryptoFrame);
+                }
             } else {
                 LOGGER.error("Undefined QUIC frame type: {}", frameTypeNumber);
             }

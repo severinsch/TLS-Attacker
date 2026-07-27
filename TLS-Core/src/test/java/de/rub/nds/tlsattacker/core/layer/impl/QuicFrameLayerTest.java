@@ -8,6 +8,7 @@
  */
 package de.rub.nds.tlsattacker.core.layer.impl;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import de.rub.nds.modifiablevariable.util.DataConverter;
@@ -302,6 +303,30 @@ public class QuicFrameLayerTest extends AbstractLayerTest {
                 0L,
                 frame.getOffsetConfig(),
                 "After clearCryptoFrameBuffer, offset must be 0 again");
+    }
+
+    @Test
+    public void testTruncatedCryptoFrameIsNotReassembled() {
+        QuicFrameLayer frameLayer = tlsContext.getLayerStack().getLayer(QuicFrameLayer.class);
+        // No packet layer, so nothing to acknowledge.
+        quicContext.setTemporarilyDisabledAcks(true);
+        // CRYPTO frame, offset 0, length 0x20 (32), but only 5 bytes of data follow.
+        transportHandler.setFetchableByte(DataConverter.hexStringToByteArray("060020AABBCCDDEE"));
+
+        assertDoesNotThrow(frameLayer::receiveData);
+        assertEquals(List.of(), frameLayer.getLayerResult().getUsedContainers());
+    }
+
+    @Test
+    public void testFrameTruncatedInsideVariableLengthIntegerStopsParsing() {
+        QuicFrameLayer frameLayer = tlsContext.getLayerStack().getLayer(QuicFrameLayer.class);
+        // No packet layer, so nothing to acknowledge.
+        quicContext.setTemporarilyDisabledAcks(true);
+        // CRYPTO frame, offset 0, then a length prefix announcing two bytes with none left.
+        transportHandler.setFetchableByte(DataConverter.hexStringToByteArray("060040"));
+
+        assertDoesNotThrow(frameLayer::receiveData);
+        assertEquals(List.of(), frameLayer.getLayerResult().getUsedContainers());
     }
 
     @Test
