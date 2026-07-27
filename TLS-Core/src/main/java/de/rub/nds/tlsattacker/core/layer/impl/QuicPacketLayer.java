@@ -559,6 +559,17 @@ public class QuicPacketLayer
         return packet;
     }
 
+    /** Discards packets too short for a header protection sample (RFC 9001 section 5.4.2). */
+    private static boolean isSamplableOrDecrypted(QuicPacket packet) {
+        if (packet.getUnprotectedPayload() != null || packet.canSampleHeaderProtection()) {
+            return true;
+        }
+        LOGGER.warn(
+                "Discarding received {} packet that is too short to contain a header protection sample",
+                packet.getPacketType());
+        return false;
+    }
+
     private void decryptInitialPacketsInBuffer() {
         if (!receivedPacketBuffer.get(QuicPacketType.INITIAL_PACKET).isEmpty()
                 && !quicContext.isInitialSecretsInitialized()) {
@@ -575,6 +586,7 @@ public class QuicPacketLayer
                     (packetType, packets) ->
                             (ArrayList<QuicPacket>)
                                     packets.stream()
+                                            .filter(QuicPacketLayer::isSamplableOrDecrypted)
                                             .map(
                                                     packet -> {
                                                         try {
@@ -603,6 +615,7 @@ public class QuicPacketLayer
                     (packetType, packets) ->
                             (ArrayList<QuicPacket>)
                                     packets.stream()
+                                            .filter(QuicPacketLayer::isSamplableOrDecrypted)
                                             .map(
                                                     packet -> {
                                                         try {
@@ -632,6 +645,7 @@ public class QuicPacketLayer
                     (packetType, packets) ->
                             (ArrayList<QuicPacket>)
                                     packets.stream()
+                                            .filter(QuicPacketLayer::isSamplableOrDecrypted)
                                             .map(
                                                     packet -> {
                                                         try {

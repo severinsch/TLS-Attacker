@@ -14,6 +14,8 @@ public class MiscRfcConstants {
 
     public static final int MAX_ENCODED_PACKETNUMBER_LENGTH = 4;
 
+    public static final int HEADER_PROTECTION_SAMPLE_LENGTH = 16;
+
     // TODO: actually rfc constant?
     public static final int AUTH_TAG_LENGTH = 16;
 
