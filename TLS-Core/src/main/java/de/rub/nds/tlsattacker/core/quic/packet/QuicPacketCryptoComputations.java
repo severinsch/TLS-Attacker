@@ -164,7 +164,7 @@ public class QuicPacketCryptoComputations extends ModifiableVariableHolder {
                 HKDFunction.extract(
                         hkdfAlgorithm,
                         context.getInitialSalt(),
-                        context.getFirstDestinationConnectionId()));
+                        context.getInitialSecretsConnectionId()));
 
         // client
         context.setInitialClientSecret(

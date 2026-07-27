@@ -44,6 +44,23 @@ public class QuicContext extends LayerContext {
     private byte[] firstDestinationConnectionId;
     private byte[] destinationConnectionId;
     private byte[] sourceConnectionId;
+
+    /**
+     * The connection ID the Initial secrets are derived from. That is the Destination Connection ID
+     * of the client's first Initial packet, but it changes to the server's Retry Source Connection
+     * ID once a Retry is exchanged (RFC 9001 section 5.2). It is therefore kept separate from
+     * firstDestinationConnectionId, which is the Original Destination Connection ID of RFC 9000
+     * section 18.2 and stays fixed for the lifetime of the connection.
+     */
+    private byte[] initialSecretsConnectionId;
+
+    /**
+     * The Source Connection ID of a Retry packet exchanged on this connection, or null if there was
+     * none. A server that sent a Retry must report it as the retry_source_connection_id transport
+     * parameter (RFC 9000 section 18.2).
+     */
+    private byte[] retrySourceConnectionId;
+
     private byte[] initialPacketToken;
     private QuicTransportParameters receivedTransportParameters;
 
@@ -165,6 +182,8 @@ public class QuicContext extends LayerContext {
         this.sourceConnectionId = this.generateRandomConnectionId(16);
         this.firstDestinationConnectionId = null;
         this.destinationConnectionId = null;
+        this.initialSecretsConnectionId = null;
+        this.retrySourceConnectionId = null;
         if (getConnection().getLocalConnectionEndType() == ConnectionEndType.CLIENT) {
             // we control the first destination ID as the client
             this.firstDestinationConnectionId = this.generateRandomConnectionId(16);
@@ -262,6 +281,28 @@ public class QuicContext extends LayerContext {
 
     public void setFirstDestinationConnectionId(byte[] firstDestinationConnectionId) {
         this.firstDestinationConnectionId = firstDestinationConnectionId;
+    }
+
+    /**
+     * @return the connection ID to derive the Initial secrets from, defaulting to the Original
+     *     Destination Connection ID while no Retry has changed it
+     */
+    public byte[] getInitialSecretsConnectionId() {
+        return initialSecretsConnectionId != null
+                ? initialSecretsConnectionId
+                : firstDestinationConnectionId;
+    }
+
+    public void setInitialSecretsConnectionId(byte[] initialSecretsConnectionId) {
+        this.initialSecretsConnectionId = initialSecretsConnectionId;
+    }
+
+    public byte[] getRetrySourceConnectionId() {
+        return retrySourceConnectionId;
+    }
+
+    public void setRetrySourceConnectionId(byte[] retrySourceConnectionId) {
+        this.retrySourceConnectionId = retrySourceConnectionId;
     }
 
     public byte[] getDestinationConnectionId() {

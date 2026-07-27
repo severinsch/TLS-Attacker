@@ -53,6 +53,17 @@ public class QuicTransportParametersExtensionsPreparator
                             chooser.getContext()
                                     .getQuicContext()
                                     .getFirstDestinationConnectionId()));
+            // A server that sent a Retry must also report its Source Connection ID (RFC 9000
+            // section 18.2); clients that check close with TRANSPORT_PARAMETER_ERROR if it is
+            // missing.
+            byte[] retrySourceConnectionId =
+                    chooser.getContext().getQuicContext().getRetrySourceConnectionId();
+            if (retrySourceConnectionId != null) {
+                quicTransportEntrys.add(
+                        new QuicTransportParameterEntry(
+                                QuicTransportParameterEntryTypes.RETRY_SOURCE_CONNECTION_ID,
+                                retrySourceConnectionId));
+            }
         }
         SilentByteArrayOutputStream stream = new SilentByteArrayOutputStream();
 

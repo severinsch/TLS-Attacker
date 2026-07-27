@@ -46,8 +46,14 @@ public class RetryPacketHandler extends LongHeaderPacketHandler<RetryPacket> {
 
         // update quic context
         quicContext.setInitialPacketToken(packet.getRetryToken().getValue());
+        quicContext.setRetrySourceConnectionId(packet.getSourceConnectionId().getValue());
         if (!quicContext.getConfig().isEchoQuic()) {
-            quicContext.setFirstDestinationConnectionId(packet.getSourceConnectionId().getValue());
+            // From here on the Initial secrets derive from the Retry Source Connection ID (RFC
+            // 9001 section 5.2). The Original Destination Connection ID is deliberately left
+            // alone: it still identifies the first Initial, which is what the Retry integrity tag
+            // (RFC 9001 section 5.8) and the original_destination_connection_id transport
+            // parameter (RFC 9000 section 18.2) are computed over.
+            quicContext.setInitialSecretsConnectionId(packet.getSourceConnectionId().getValue());
             quicContext.setDestinationConnectionId(packet.getSourceConnectionId().getValue());
         }
 

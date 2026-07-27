@@ -121,6 +121,57 @@ public class QuicContextServerModeTest {
                 "Server Initial IV must match");
     }
 
+    /**
+     * A Retry changes the connection ID the Initial secrets are derived from (RFC 9001 section
+     * 5.2), but not the Original Destination Connection ID, which identifies the first Initial and
+     * is what the Retry integrity tag (RFC 9001 section 5.8) and the
+     * original_destination_connection_id transport parameter (RFC 9000 section 18.2) are computed
+     * over.
+     */
+    @Test
+    public void testRetryChangesTheInitialSecretsConnectionIdOnly() throws Exception {
+        byte[] originalDcid = new byte[] {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
+        byte[] retryScid = new byte[] {0x11, 0x12, 0x13, 0x14};
+
+        Config config = new Config();
+        new QuicDelegate(true).applyDelegate(config);
+        QuicContext quicContext = new State(config).getContext().getQuicContext();
+
+        quicContext.setFirstDestinationConnectionId(originalDcid);
+        quicContext.setInitialSecretsInitialized(false);
+        QuicPacketCryptoComputations.calculateInitialSecrets(quicContext);
+        byte[] preRetryClientKey = quicContext.getInitialClientKey();
+
+        // A Retry only redirects the key derivation
+        quicContext.setInitialSecretsConnectionId(retryScid);
+        quicContext.setInitialSecretsInitialized(false);
+        QuicPacketCryptoComputations.calculateInitialSecrets(quicContext);
+
+        assertArrayEquals(
+                originalDcid,
+                quicContext.getFirstDestinationConnectionId(),
+                "A Retry must not change the Original Destination Connection ID");
+        assertArrayEquals(
+                retryScid,
+                quicContext.getInitialSecretsConnectionId(),
+                "Initial secrets must derive from the Retry Source Connection ID afterwards");
+        assertFalse(
+                java.util.Arrays.equals(preRetryClientKey, quicContext.getInitialClientKey()),
+                "Initial secrets must actually be re-derived from the new connection ID");
+    }
+
+    /** Without a Retry the two connection IDs are the same value. */
+    @Test
+    public void testInitialSecretsConnectionIdDefaultsToTheOriginalDcid() {
+        Config config = new Config();
+        new QuicDelegate(true).applyDelegate(config);
+        QuicContext quicContext = new State(config).getContext().getQuicContext();
+
+        assertArrayEquals(
+                quicContext.getFirstDestinationConnectionId(),
+                quicContext.getInitialSecretsConnectionId());
+    }
+
     @Test
     public void testResetReturnsToUninitializedInServerMode() {
         Config config = new Config();
