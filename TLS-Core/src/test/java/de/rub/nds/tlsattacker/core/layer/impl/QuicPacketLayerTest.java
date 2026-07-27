@@ -10,6 +10,7 @@ package de.rub.nds.tlsattacker.core.layer.impl;
 
 import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import de.rub.nds.modifiablevariable.util.DataConverter;
@@ -203,6 +204,26 @@ public class QuicPacketLayerTest extends AbstractLayerTest {
                     Arrays.toString(transportHandler.getSentBytes()));
             transportHandler.resetOutputStream();
         }
+    }
+
+    /**
+     * sendDataInternal documents a null hint as supported: it falls back to an UNKNOWN packet type
+     * and warns. Sending with a configured packet, which makes the hint irrelevant, must therefore
+     * not fail.
+     */
+    @Test
+    public void testSendDataWithoutHint() {
+        setUpInitialSecrets();
+        QuicPacketLayer quicPacketLayer =
+                (QuicPacketLayer) tlsContext.getLayerStack().getLayer(QuicPacketLayer.class);
+        quicPacketLayer.setLayerConfiguration(
+                new SpecificSendLayerConfiguration<>(
+                        ImplementedLayers.QUICPACKET, new InitialPacket(clientHelloInStreamFrame)));
+
+        assertDoesNotThrow(() -> quicPacketLayer.sendData(null, clientHelloInStreamFrame));
+        assertEquals(
+                Arrays.toString(initialPacketWithClientHello),
+                Arrays.toString(transportHandler.getSentBytes()));
     }
 
     @Test

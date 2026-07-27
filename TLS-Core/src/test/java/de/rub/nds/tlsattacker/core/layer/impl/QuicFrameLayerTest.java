@@ -112,6 +112,22 @@ public class QuicFrameLayerTest extends AbstractLayerTest {
         }
     }
 
+    /**
+     * getHintForFrame() returns null while no encryption level is current, which happens between a
+     * Retry and the next ServerHello. Sending must still work; the hint only carries optional frame
+     * boundaries.
+     */
+    @Test
+    public void testSendFramesWithoutAnEncryptionLevel() {
+        quicContext.setInitialSecretsInitialized(false);
+        QuicFrameLayer frameLayer = tlsContext.getLayerStack().getLayer(QuicFrameLayer.class);
+        frameLayer.setLayerConfiguration(
+                new SpecificSendLayerConfiguration<>(ImplementedLayers.QUICFRAME, new PingFrame()));
+
+        assertDoesNotThrow(frameLayer::sendConfiguration);
+        assertEquals(Arrays.toString(pingFrame), Arrays.toString(transportHandler.getSentBytes()));
+    }
+
     @Test
     public void testSendData() throws IOException {
         // CRYPTO Frame

@@ -128,8 +128,12 @@ public class QuicPacketLayer
     protected LayerProcessingResult<QuicPacket> sendDataInternal(
             LayerProcessingHint hint, byte[] data) throws IOException {
         QuicPacketType hintedType = QuicPacketType.UNKNOWN;
-        if (hint != null && hint instanceof QuicPacketLayerHint) {
-            hintedType = ((QuicPacketLayerHint) hint).getQuicPacketType();
+        QuicPacketLayerHint packetLayerHint =
+                hint instanceof QuicPacketLayerHint quicPacketLayerHint
+                        ? quicPacketLayerHint
+                        : null;
+        if (packetLayerHint != null) {
+            hintedType = packetLayerHint.getQuicPacketType();
         } else {
             LOGGER.warn(
                     "Sending packet without a LayerProcessing hint. Using UNKNOWN as the type.");
@@ -143,12 +147,13 @@ public class QuicPacketLayer
             hintedType = QuicPacketType.INITIAL_PACKET;
         }
 
-        if (((QuicPacketLayerHint) hint).getFrameBoundaries() != null
-                && !((QuicPacketLayerHint) hint).getFrameBoundaries().isEmpty()
+        if (packetLayerHint != null
+                && packetLayerHint.getFrameBoundaries() != null
+                && !packetLayerHint.getFrameBoundaries().isEmpty()
                 && !context.getConfig().isQuicPacketLayerAllConfigurationsOnePacket()) {
             int startIndex = 0;
             SilentByteArrayOutputStream stream = new SilentByteArrayOutputStream();
-            for (int boundary : ((QuicPacketLayerHint) hint).getFrameBoundaries()) {
+            for (int boundary : packetLayerHint.getFrameBoundaries()) {
                 List<QuicPacket> givenPackets = getUnprocessedConfiguredContainers();
                 try {
                     if (getLayerConfiguration().getContainerList() != null

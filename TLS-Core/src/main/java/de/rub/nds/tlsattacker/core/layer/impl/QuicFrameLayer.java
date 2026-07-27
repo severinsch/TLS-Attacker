@@ -496,7 +496,9 @@ public class QuicFrameLayer
                 byte[] bytes = writeFrame(frame);
                 stream.writeBytes(bytes);
                 addProducedContainer(frame);
-                hint.addFrameBoundary(bytes.length);
+                if (hint != null) {
+                    hint.addFrameBoundary(bytes.length);
+                }
             }
             getLowerLayer().sendData(hint, stream.toByteArray());
         } else {
