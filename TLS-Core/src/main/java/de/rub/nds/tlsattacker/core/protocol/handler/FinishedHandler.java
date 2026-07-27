@@ -171,6 +171,20 @@ public class FinishedHandler extends HandshakeMessageHandler<FinishedMessage> {
             } else {
                 adjustApplicationTrafficSecrets();
                 setServerRecordCipher(Tls13KeySetType.APPLICATION_TRAFFIC_SECRETS);
+                // adjustContext derives the QUIC application secrets when an endpoint receives
+                // the peer's Finished. A server sending its own Finished takes this path
+                // instead, and without the same derivation it has no 1-RTT keys of its own, so
+                // everything after the handshake (HANDSHAKE_DONE, NewSessionTicket, KeyUpdate)
+                // cannot be sent.
+                if (tlsContext.getConfig().getDefaultLayerConfiguration()
+                        == StackConfiguration.QUIC) {
+                    try {
+                        QuicPacketCryptoComputations.calculateApplicationSecrets(
+                                tlsContext.getContext());
+                    } catch (NoSuchAlgorithmException | CryptoException e) {
+                        LOGGER.error("Could not initialize application secrets: ", e);
+                    }
+                }
             }
         }
     }
