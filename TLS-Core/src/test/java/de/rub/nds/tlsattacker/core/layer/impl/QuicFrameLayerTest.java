@@ -112,6 +112,17 @@ public class QuicFrameLayerTest extends AbstractLayerTest {
     }
 
     @Test
+    public void testSendFramesWithoutAnEncryptionLevel() throws IOException {
+        quicContext.setInitialSecretsInitialized(false);
+        QuicFrameLayer frameLayer = tlsContext.getLayerStack().getLayer(QuicFrameLayer.class);
+        frameLayer.setLayerConfiguration(
+                new SpecificSendLayerConfiguration<>(ImplementedLayers.QUICFRAME, new PingFrame()));
+
+        frameLayer.sendConfiguration();
+        assertEquals(Arrays.toString(pingFrame), Arrays.toString(transportHandler.getSentBytes()));
+    }
+
+    @Test
     public void testSendData() throws IOException {
         // CRYPTO Frame
         byte[] quicFramePayload = DataConverter.hexStringToByteArray("AABBCCDDEE");
