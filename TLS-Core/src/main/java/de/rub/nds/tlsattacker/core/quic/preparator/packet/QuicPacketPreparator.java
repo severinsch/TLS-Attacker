@@ -15,6 +15,7 @@ import de.rub.nds.tlsattacker.core.quic.constants.MiscRfcConstants;
 import de.rub.nds.tlsattacker.core.quic.packet.QuicPacket;
 import de.rub.nds.tlsattacker.core.state.quic.QuicContext;
 import de.rub.nds.tlsattacker.core.workflow.chooser.Chooser;
+import de.rub.nds.tlsattacker.transport.ConnectionEndType;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -64,10 +65,28 @@ public abstract class QuicPacketPreparator<T extends QuicPacket> extends Prepara
                 && packet.getDestinationConnectionIdConfig().length > 0) {
             packet.setDestinationConnectionId(packet.getDestinationConnectionIdConfig());
         } else {
-            packet.setDestinationConnectionId(context.getDestinationConnectionId());
+            packet.setDestinationConnectionId(chooseDestinationConnectionId());
         }
         LOGGER.debug(
                 "Destination Connection ID: {}", packet.getDestinationConnectionId().getValue());
+    }
+
+    /**
+     * The connection ID to address the peer with. The context holds none until the peer has been
+     * heard from. A client addresses its first Initial to the unpredictable value it chose itself
+     * (RFC 9000 section 7.2), which is also what both sides derive the Initial secrets from; a
+     * server has nothing to address until the client's first Initial arrives. Either way a header
+     * has to encode a connection ID, and a zero-length one is valid (RFC 9000 section 17.2).
+     */
+    private byte[] chooseDestinationConnectionId() {
+        if (context.getDestinationConnectionId() != null) {
+            return context.getDestinationConnectionId();
+        }
+        if (context.getConnection().getLocalConnectionEndType() == ConnectionEndType.CLIENT
+                && context.getFirstDestinationConnectionId() != null) {
+            return context.getFirstDestinationConnectionId();
+        }
+        return new byte[0];
     }
 
     protected void prepareDestinationConnectionIdLength() {

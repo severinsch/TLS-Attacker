@@ -60,15 +60,18 @@ public class InitialPacketPreparator extends LongHeaderPacketPreparator<InitialP
 
     @Override
     protected int calculatePadding() {
+        // The connection IDs are read off the packet, not the context: they have already been
+        // prepared at this point, and a packet may carry a configured connection ID whose length
+        // differs from the context's.
         return Math.max(
                 0,
                 MiscRfcConstants.SMALLEST_MAX_DATAGRAM_SIZE
                         - (QuicPacketByteLength.QUIC_FIRST_HEADER_BYTE
                                 + QuicPacketByteLength.QUIC_VERSION_LENGTH
                                 + QuicPacketByteLength.DESTINATION_CONNECTION_ID_LENGTH
-                                + context.getDestinationConnectionId().length
+                                + packet.getDestinationConnectionId().getValue().length
                                 + QuicPacketByteLength.SOURCE_CONNECTION_ID_LENGTH
-                                + context.getSourceConnectionId().length
+                                + packet.getSourceConnectionId().getValue().length
                                 + (packet.getToken().getValue().length == 0
                                         ? QuicPacketByteLength.NO_TOKEN_TOKEN_LENGTH
                                         : packet.getTokenLength().getValue()
