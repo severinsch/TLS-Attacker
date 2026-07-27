@@ -559,6 +559,22 @@ public class QuicPacketLayer
         return packet;
     }
 
+    /**
+     * Keeps a buffered packet only if header protection can still be removed from it: either it is
+     * already decrypted, or it is long enough to sample. RFC 9001 section 5.4.2 requires discarding
+     * a packet that is not long enough to contain a complete header protection sample. Without this
+     * the sampling attempt throws and aborts the decryption of every other packet in the buffer.
+     */
+    private static boolean isSamplableOrDecrypted(QuicPacket packet) {
+        if (packet.getUnprotectedPayload() != null || packet.canSampleHeaderProtection()) {
+            return true;
+        }
+        LOGGER.warn(
+                "Discarding received {} packet that is too short to contain a header protection sample",
+                packet.getPacketType());
+        return false;
+    }
+
     private void decryptInitialPacketsInBuffer() {
         if (!receivedPacketBuffer.get(QuicPacketType.INITIAL_PACKET).isEmpty()
                 && !quicContext.isInitialSecretsInitialized()) {
@@ -575,6 +591,7 @@ public class QuicPacketLayer
                     (packetType, packets) ->
                             (ArrayList<QuicPacket>)
                                     packets.stream()
+                                            .filter(QuicPacketLayer::isSamplableOrDecrypted)
                                             .map(
                                                     packet -> {
                                                         try {
@@ -603,6 +620,7 @@ public class QuicPacketLayer
                     (packetType, packets) ->
                             (ArrayList<QuicPacket>)
                                     packets.stream()
+                                            .filter(QuicPacketLayer::isSamplableOrDecrypted)
                                             .map(
                                                     packet -> {
                                                         try {
@@ -632,6 +650,7 @@ public class QuicPacketLayer
                     (packetType, packets) ->
                             (ArrayList<QuicPacket>)
                                     packets.stream()
+                                            .filter(QuicPacketLayer::isSamplableOrDecrypted)
                                             .map(
                                                     packet -> {
                                                         try {

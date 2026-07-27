@@ -173,7 +173,7 @@ public abstract class QuicPacket extends ModifiableVariableHolder implements Dat
      * @return header protection sample as byte array
      */
     public byte[] getHeaderProtectionSample() {
-        byte[] sample = new byte[16];
+        byte[] sample = new byte[MiscRfcConstants.HEADER_PROTECTION_SAMPLE_LENGTH];
         if (protectedPayload != null) {
             System.arraycopy(
                     protectedPayload.getValue(),
@@ -181,17 +181,45 @@ public abstract class QuicPacket extends ModifiableVariableHolder implements Dat
                             - packetNumberLength.getValue(),
                     sample,
                     0,
-                    16);
+                    MiscRfcConstants.HEADER_PROTECTION_SAMPLE_LENGTH);
         } else {
             System.arraycopy(
                     protectedPacketNumberAndPayload.getValue(),
                     MiscRfcConstants.MAX_ENCODED_PACKETNUMBER_LENGTH,
                     sample,
                     0,
-                    16);
+                    MiscRfcConstants.HEADER_PROTECTION_SAMPLE_LENGTH);
         }
 
         return sample;
+    }
+
+    /**
+     * Whether this packet is long enough for {@link #getHeaderProtectionSample()} to read a
+     * complete sample. RFC 9001 section 5.4.2 requires a receiver to discard a packet that is not,
+     * rather than removing header protection from it; sampling one regardless throws
+     * ArrayIndexOutOfBoundsException.
+     *
+     * @return true if a header protection sample can be taken from this packet
+     */
+    public boolean canSampleHeaderProtection() {
+        byte[] ciphertext;
+        int sampleOffset;
+        if (protectedPayload != null && protectedPayload.getValue() != null) {
+            ciphertext = protectedPayload.getValue();
+            int packetNumberBytes =
+                    packetNumberLength != null && packetNumberLength.getValue() != null
+                            ? packetNumberLength.getValue()
+                            : 0;
+            sampleOffset = MiscRfcConstants.MAX_ENCODED_PACKETNUMBER_LENGTH - packetNumberBytes;
+        } else if (protectedPacketNumberAndPayload != null
+                && protectedPacketNumberAndPayload.getValue() != null) {
+            ciphertext = protectedPacketNumberAndPayload.getValue();
+            sampleOffset = MiscRfcConstants.MAX_ENCODED_PACKETNUMBER_LENGTH;
+        } else {
+            return false;
+        }
+        return ciphertext.length >= sampleOffset + MiscRfcConstants.HEADER_PROTECTION_SAMPLE_LENGTH;
     }
 
     @Override
