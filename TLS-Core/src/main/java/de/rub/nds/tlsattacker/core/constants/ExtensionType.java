@@ -284,6 +284,28 @@ public enum ExtensionType {
         }
     }
 
+    /**
+     * Whether an extension may appear in a TLS 1.3 ServerHello or HelloRetryRequest (RFC 8446
+     * section 4.2).
+     *
+     * @param extType The extension type to check
+     * @param helloRetryRequest whether the message is a HelloRetryRequest
+     * @return true if the extension is permitted in that message
+     */
+    public static boolean allowedInServerHello(ExtensionType extType, boolean helloRetryRequest) {
+        switch (extType) {
+            case KEY_SHARE:
+            case SUPPORTED_VERSIONS:
+                return true;
+            case PRE_SHARED_KEY:
+                return !helloRetryRequest;
+            case COOKIE:
+                return helloRetryRequest;
+            default:
+                return false;
+        }
+    }
+
     public static List<ExtensionType> getNonTls13Extensions() {
         List<ExtensionType> list = new LinkedList<>();
         list.add(EXTENDED_MASTER_SECRET);

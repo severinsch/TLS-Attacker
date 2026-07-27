@@ -81,6 +81,12 @@ public class ServerHelloPreparator extends HelloMessagePreparator<ServerHelloMes
 
         if (selectedCipherSuite != null && selectedCipherSuite.isTls13()) {
             forbiddenExtensionTypes.addAll(ExtensionType.getNonTls13Extensions());
+            // Only extensions RFC 8446 section 4.2 permits in a ServerHello.
+            for (ExtensionType extensionType : ExtensionType.values()) {
+                if (!ExtensionType.allowedInServerHello(extensionType, msg.isHelloRetryRequest())) {
+                    forbiddenExtensionTypes.add(extensionType);
+                }
+            }
         } else {
             forbiddenExtensionTypes.addAll(ExtensionType.getTls13OnlyExtensions());
         }
