@@ -8,6 +8,7 @@
  */
 package de.rub.nds.tlsattacker.core.layer.impl;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import de.rub.nds.modifiablevariable.util.DataConverter;
@@ -162,6 +163,9 @@ public class QuicFrameLayerTest extends AbstractLayerTest {
     @Test
     public void testHandshakeCryptoFrameOffsetsAdvance() throws IOException {
         QuicFrameLayer frameLayer = tlsContext.getLayerStack().getLayer(QuicFrameLayer.class);
+        // The stack under test has no packet layer, so no received packet is on record to
+        // acknowledge. Suppress the automatic ACK; this test is about frame parsing.
+        quicContext.setTemporarilyDisabledAcks(true);
 
         byte[] msg1 = new byte[123];
         byte[] msg2 = new byte[794];
@@ -221,6 +225,9 @@ public class QuicFrameLayerTest extends AbstractLayerTest {
     @Test
     public void testInitialAndHandshakeOffsetsAreIndependent() throws IOException {
         QuicFrameLayer frameLayer = tlsContext.getLayerStack().getLayer(QuicFrameLayer.class);
+        // The stack under test has no packet layer, so no received packet is on record to
+        // acknowledge. Suppress the automatic ACK; this test is about frame parsing.
+        quicContext.setTemporarilyDisabledAcks(true);
 
         byte[] initialData = new byte[200];
         byte[] handshakeData1 = new byte[150];
@@ -275,6 +282,9 @@ public class QuicFrameLayerTest extends AbstractLayerTest {
     @Test
     public void testClearCryptoFrameBufferResetsSendOffsets() throws IOException {
         QuicFrameLayer frameLayer = tlsContext.getLayerStack().getLayer(QuicFrameLayer.class);
+        // The stack under test has no packet layer, so no received packet is on record to
+        // acknowledge. Suppress the automatic ACK; this test is about frame parsing.
+        quicContext.setTemporarilyDisabledAcks(true);
 
         byte[] data = new byte[100];
         QuicFrameLayerHint handshakeHint =
@@ -302,6 +312,42 @@ public class QuicFrameLayerTest extends AbstractLayerTest {
                 0L,
                 frame.getOffsetConfig(),
                 "After clearCryptoFrameBuffer, offset must be 0 again");
+    }
+
+    /**
+     * A CRYPTO frame whose declared length runs past the end of the packet must not be handed to
+     * reassembly. readDataContainer records the unread bytes instead of rethrowing, so such a frame
+     * is only partially initialized and dereferencing its data would fail.
+     */
+    @Test
+    public void testTruncatedCryptoFrameIsNotReassembled() {
+        QuicFrameLayer frameLayer = tlsContext.getLayerStack().getLayer(QuicFrameLayer.class);
+        // The stack under test has no packet layer, so no received packet is on record to
+        // acknowledge. Suppress the automatic ACK; this test is about frame parsing.
+        quicContext.setTemporarilyDisabledAcks(true);
+        // CRYPTO frame, offset 0, length 0x20 (32), but only 5 bytes of data follow.
+        transportHandler.setFetchableByte(DataConverter.hexStringToByteArray("060020AABBCCDDEE"));
+
+        assertDoesNotThrow(frameLayer::receiveData);
+        assertEquals(List.of(), frameLayer.getLayerResult().getUsedContainers());
+    }
+
+    /**
+     * A frame truncated in the middle of a variable-length integer must stop parsing. Reading past
+     * the end used to yield -1, which was folded into the value as 0xff and produced a bogus length
+     * instead of an error.
+     */
+    @Test
+    public void testFrameTruncatedInsideVariableLengthIntegerStopsParsing() {
+        QuicFrameLayer frameLayer = tlsContext.getLayerStack().getLayer(QuicFrameLayer.class);
+        // The stack under test has no packet layer, so no received packet is on record to
+        // acknowledge. Suppress the automatic ACK; this test is about frame parsing.
+        quicContext.setTemporarilyDisabledAcks(true);
+        // CRYPTO frame, offset 0, then a length prefix announcing two bytes with none left.
+        transportHandler.setFetchableByte(DataConverter.hexStringToByteArray("060040"));
+
+        assertDoesNotThrow(frameLayer::receiveData);
+        assertEquals(List.of(), frameLayer.getLayerResult().getUsedContainers());
     }
 
     @Test

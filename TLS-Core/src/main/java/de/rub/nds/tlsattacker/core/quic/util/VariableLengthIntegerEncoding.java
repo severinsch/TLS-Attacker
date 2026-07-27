@@ -9,6 +9,7 @@
 package de.rub.nds.tlsattacker.core.quic.util;
 
 import de.rub.nds.modifiablevariable.util.DataConverter;
+import de.rub.nds.protocol.exception.EndOfStreamException;
 import java.io.IOException;
 import java.io.InputStream;
 
@@ -67,16 +68,31 @@ public class VariableLengthIntegerEncoding {
      *
      * @param inputStream the input stream to read from
      * @return decoded integer as java long
+     * @throws EndOfStreamException if the stream ends before the integer is complete
      */
     public static long readVariableLengthInteger(InputStream inputStream) throws IOException {
-        byte b = (byte) inputStream.read();
-        long v = b;
+        // read() signals end-of-stream with -1, which must not be folded into the value as
+        // 0xff: that turns a truncated integer into a bogus 8-byte one instead of an error.
+        int firstByte = inputStream.read();
+        if (firstByte == -1) {
+            throw new EndOfStreamException(
+                    "Reached end of stream while reading a variable-length integer prefix");
+        }
+        long v = (byte) firstByte;
         byte prefix = (byte) ((v & 0xff) >> 6);
         byte length = (byte) ((1 & 0xff) << prefix);
         v = (byte) v & 0x3f;
         for (int i = 0; i < length - 1; i++) {
-            b = (byte) inputStream.read();
-            v = (v << 8) + (b & 0xff);
+            int nextByte = inputStream.read();
+            if (nextByte == -1) {
+                throw new EndOfStreamException(
+                        "Reached end of stream after "
+                                + (i + 1)
+                                + " of "
+                                + length
+                                + " variable-length integer bytes");
+            }
+            v = (v << 8) + (nextByte & 0xff);
         }
         return v;
     }

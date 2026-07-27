@@ -10,8 +10,12 @@ package de.rub.nds.tlsattacker.core.quic;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import de.rub.nds.protocol.exception.EndOfStreamException;
 import de.rub.nds.tlsattacker.core.quic.util.VariableLengthIntegerEncoding;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import org.junit.jupiter.api.Test;
 
 public class VariableLengthIntegerEncodingTest {
@@ -102,5 +106,32 @@ public class VariableLengthIntegerEncodingTest {
         assertEquals(
                 4611686018427387903L,
                 VariableLengthIntegerEncoding.decodeVariableLengthInteger(bytesToDecode));
+    }
+
+    @Test
+    public void testReadVariableLengthIntegerReadsWellFormedValues() throws IOException {
+        for (long value : new long[] {0, 63, 64, 16383, 16384, 1073741823, 1073741824}) {
+            byte[] encoded = VariableLengthIntegerEncoding.encodeVariableLengthInteger(value);
+            ByteArrayInputStream stream = new ByteArrayInputStream(encoded);
+            assertEquals(value, VariableLengthIntegerEncoding.readVariableLengthInteger(stream));
+            assertEquals(0, stream.available());
+        }
+    }
+
+    @Test
+    public void testReadVariableLengthIntegerThrowsOnEmptyStream() {
+        ByteArrayInputStream empty = new ByteArrayInputStream(new byte[0]);
+        assertThrows(
+                EndOfStreamException.class,
+                () -> VariableLengthIntegerEncoding.readVariableLengthInteger(empty));
+    }
+
+    @Test
+    public void testReadVariableLengthIntegerThrowsOnTruncatedValue() {
+        // 0x40 announces a two byte integer but only the prefix byte is present.
+        ByteArrayInputStream truncated = new ByteArrayInputStream(new byte[] {(byte) 0x40});
+        assertThrows(
+                EndOfStreamException.class,
+                () -> VariableLengthIntegerEncoding.readVariableLengthInteger(truncated));
     }
 }
