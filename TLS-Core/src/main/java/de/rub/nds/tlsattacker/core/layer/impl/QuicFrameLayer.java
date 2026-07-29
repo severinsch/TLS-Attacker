@@ -154,16 +154,17 @@ public class QuicFrameLayer
                                                                 == QuicFrameType.CRYPTO_FRAME)
                                         .map(frame -> (CryptoFrame) frame)
                                         .collect(Collectors.toList());
+                        int configuredFrameCount = givenCryptoFrames.size();
                         List<CryptoFrame> frames =
                                 getEnoughCryptoFrames(
                                         packetLayerHint.getQuicPacketType(),
                                         data,
                                         givenCryptoFrames);
-                        sendFrames(frames, packetLayerHint);
+                        sendCryptoFrames(frames, configuredFrameCount, packetLayerHint);
                     } else {
                         List<CryptoFrame> frames =
                                 getEnoughCryptoFrames(packetLayerHint.getQuicPacketType(), data);
-                        sendFrames(frames, packetLayerHint);
+                        sendCryptoFrames(frames, 0, packetLayerHint);
                     }
                     break;
                 case APPLICATION_DATA:
@@ -520,6 +521,48 @@ public class QuicFrameLayer
         initialPhaseWriteCryptoFrameOffset = 0;
         handshakePhaseWriteCryptoFrameOffset = 0;
         applicationPhaseWriteCryptoFrameOffset = 0;
+    }
+
+    /**
+     * Sends the CRYPTO frames of one handshake flight, keeping the fragmentation this layer just
+     * decided on.
+     *
+     * <p>getEnoughCryptoFrames() splits a flight into quicMaximumFrameSize pieces so that a piece
+     * fits into a UDP datagram - RFC 9000 section 14 requires a QUIC packet to fit into a single
+     * datagram, and puts the maximum datagram size of a path that has not been probed at 1200
+     * bytes. Handing every piece to sendFrames() at once would concatenate them back into one
+     * packet whenever quicFrameLayerAllConfigurationsOnePacket is set, which is the default, so the
+     * split would be undone the moment it was made. A flight larger than the path MTU then does not
+     * merely risk being dropped: the send fails locally with EMSGSIZE and nothing is transmitted at
+     * all.
+     *
+     * <p>Only the pieces this layer generated are packetized that way. Frames the caller configured
+     * explicitly keep whatever packing quicFrameLayerAllConfigurationsOnePacket asks for, because
+     * putting several frames - even deliberately over-sized ones - into one packet is a legitimate
+     * thing to want to send.
+     *
+     * @param frames the configured frames, if any, followed by the generated fragments
+     * @param configuredFrameCount how many leading entries of {@code frames} the caller configured
+     * @param hint the packet-layer hint, carrying the encryption level to send at
+     */
+    private void sendCryptoFrames(
+            List<CryptoFrame> frames, int configuredFrameCount, QuicPacketLayerHint hint)
+            throws IOException {
+        if (configuredFrameCount == 0 && frames.size() == 1) {
+            // Nothing was split, which is the common case: one message, one frame, one packet.
+            sendFrames(frames, hint);
+            return;
+        }
+        if (configuredFrameCount > 0) {
+            sendFrames(frames.subList(0, configuredFrameCount), hint);
+        }
+        for (CryptoFrame fragment : frames.subList(configuredFrameCount, frames.size())) {
+            // A fresh hint per packet: frame boundaries accumulate on it and describe the packet
+            // being sent, not every packet of the flight.
+            sendFrames(
+                    List.of(fragment),
+                    hint == null ? null : new QuicPacketLayerHint(hint.getQuicPacketType()));
+        }
     }
 
     private void sendFrames(List<? extends QuicFrame> frames, QuicPacketLayerHint hint)
