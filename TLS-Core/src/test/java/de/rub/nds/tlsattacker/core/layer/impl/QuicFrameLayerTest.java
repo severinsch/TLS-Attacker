@@ -11,6 +11,7 @@ package de.rub.nds.tlsattacker.core.layer.impl;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import de.rub.nds.modifiablevariable.util.DataConverter;
 import de.rub.nds.protocol.exception.CryptoException;
@@ -436,6 +437,85 @@ public class QuicFrameLayerTest extends AbstractLayerTest {
                 DataConverter.hexStringToByteArray("33333333"),
                 secondStream.readChunk(secondStream.available()),
                 "Only CRYPTO data beyond the delivered offset may be passed up again");
+    }
+
+    @Test
+    public void testEachGeneratedCryptoFragmentIsSentOnItsOwn() throws IOException {
+        List<Integer> lowerLayerSends = recordLowerLayerSends();
+        QuicFrameLayer frameLayer = context.getLayerStack().getLayer(QuicFrameLayer.class);
+        int fragmentCount = 8;
+        byte[] oversizedFlight = new byte[fragmentCount * config.getQuicMaximumFrameSize()];
+
+        frameLayer.setLayerConfiguration(
+                new SpecificSendLayerConfiguration<>(
+                        ImplementedLayers.QUICFRAME, new ArrayList<>()));
+        frameLayer.sendData(
+                new QuicFrameLayerHint(ProtocolMessageType.HANDSHAKE, true), oversizedFlight);
+
+        assertEquals(
+                fragmentCount,
+                frameLayer.getLayerResult().getUsedContainers().size(),
+                "The flight is fragmented into one CRYPTO frame per quicMaximumFrameSize piece");
+        assertEquals(
+                fragmentCount,
+                lowerLayerSends.size(),
+                "Each generated fragment has to be sent on its own, not concatenated into one"
+                        + " packet; sends="
+                        + lowerLayerSends);
+        for (int sendSize : lowerLayerSends) {
+            assertTrue(
+                    sendSize <= config.getQuicMaximumFrameSize() + CRYPTO_FRAME_MAX_HEADER_BYTES,
+                    "A fragment must not exceed its own chunk size; sends=" + lowerLayerSends);
+        }
+    }
+
+    @Test
+    public void testConfiguredCryptoFramesStayInOnePacket() throws IOException {
+        List<Integer> lowerLayerSends = recordLowerLayerSends();
+        QuicFrameLayer frameLayer = context.getLayerStack().getLayer(QuicFrameLayer.class);
+
+        List<QuicFrame> configuredFrames = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            CryptoFrame frame = new CryptoFrame();
+            frame.setMaxFrameLengthConfig(400);
+            configuredFrames.add(frame);
+        }
+        frameLayer.setLayerConfiguration(
+                new SpecificSendLayerConfiguration<>(
+                        ImplementedLayers.QUICFRAME, configuredFrames));
+        frameLayer.sendData(
+                new QuicFrameLayerHint(ProtocolMessageType.HANDSHAKE, true), new byte[1200]);
+
+        assertEquals(
+                3,
+                frameLayer.getLayerResult().getUsedContainers().size(),
+                "The three configured frames carry the whole payload, so none is generated");
+        assertEquals(
+                1,
+                lowerLayerSends.size(),
+                "Explicitly configured frames are still coalesced into a single packet; sends="
+                        + lowerLayerSends);
+    }
+
+    /** Frame type plus the widest CRYPTO offset and length varints. */
+    private static final int CRYPTO_FRAME_MAX_HEADER_BYTES = 1 + 8 + 8;
+
+    /** Rebuilds the stack with a transport handler that records the size of every write. */
+    private List<Integer> recordLowerLayerSends() {
+        List<Integer> sendSizes = new ArrayList<>();
+        FakeUdpTransportHandler recordingHandler =
+                new FakeUdpTransportHandler(null) {
+                    @Override
+                    public void sendData(byte[] data) throws IOException {
+                        sendSizes.add(data.length);
+                        super.sendData(data);
+                    }
+                };
+        tlsContext.setTransportHandler(recordingHandler);
+        transportHandler = recordingHandler;
+        context.setLayerStack(
+                new LayerStack(context, new QuicFrameLayer(context), new UdpLayer(context)));
+        return sendSizes;
     }
 
     private static byte[] handshakeMessage(HandshakeMessageType type, int length) {

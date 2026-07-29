@@ -154,16 +154,17 @@ public class QuicFrameLayer
                                                                 == QuicFrameType.CRYPTO_FRAME)
                                         .map(frame -> (CryptoFrame) frame)
                                         .collect(Collectors.toList());
+                        int configuredFrameCount = givenCryptoFrames.size();
                         List<CryptoFrame> frames =
                                 getEnoughCryptoFrames(
                                         packetLayerHint.getQuicPacketType(),
                                         data,
                                         givenCryptoFrames);
-                        sendFrames(frames, packetLayerHint);
+                        sendCryptoFrames(frames, configuredFrameCount, packetLayerHint);
                     } else {
                         List<CryptoFrame> frames =
                                 getEnoughCryptoFrames(packetLayerHint.getQuicPacketType(), data);
-                        sendFrames(frames, packetLayerHint);
+                        sendCryptoFrames(frames, 0, packetLayerHint);
                     }
                     break;
                 case APPLICATION_DATA:
@@ -511,6 +512,32 @@ public class QuicFrameLayer
         initialPhaseWriteCryptoFrameOffset = 0;
         handshakePhaseWriteCryptoFrameOffset = 0;
         applicationPhaseWriteCryptoFrameOffset = 0;
+    }
+
+    /**
+     * Sends each generated CRYPTO fragment in its own packet so a packet fits a datagram (RFC 9000
+     * section 14). Configured frames still follow quicFrameLayerAllConfigurationsOnePacket.
+     *
+     * @param frames the configured frames, if any, followed by the generated fragments
+     * @param configuredFrameCount how many leading entries of {@code frames} the caller configured
+     * @param hint the packet-layer hint, carrying the encryption level to send at
+     */
+    private void sendCryptoFrames(
+            List<CryptoFrame> frames, int configuredFrameCount, QuicPacketLayerHint hint)
+            throws IOException {
+        if (configuredFrameCount == 0 && frames.size() == 1) {
+            sendFrames(frames, hint);
+            return;
+        }
+        if (configuredFrameCount > 0) {
+            sendFrames(frames.subList(0, configuredFrameCount), hint);
+        }
+        for (CryptoFrame fragment : frames.subList(configuredFrameCount, frames.size())) {
+            // A fresh hint per packet, since frame boundaries accumulate on it.
+            sendFrames(
+                    List.of(fragment),
+                    hint == null ? null : new QuicPacketLayerHint(hint.getQuicPacketType()));
+        }
     }
 
     private void sendFrames(List<? extends QuicFrame> frames, QuicPacketLayerHint hint)
