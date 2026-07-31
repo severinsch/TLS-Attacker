@@ -132,6 +132,23 @@ public enum QuicTransportParameterEntryTypes {
         return type;
     }
 
+    /**
+     * Look a parameter up by its decoded transport parameter ID.
+     *
+     * <p>IDs are variable-length integers (RFC 9000, Section 18), so they are not bytes. Every ID
+     * defined by RFC 9000 and RFC 9221 is below 64 and therefore encodes as a single byte whose
+     * value equals the ID, which is why the byte-keyed map answers for all of them. An ID that does
+     * not name a parameter we model — a larger registered one, or one of the reserved GREASE IDs of
+     * the form 31*N+27 (Section 18.1) — is {@link #UNKNOWN}, and the caller is expected to skip its
+     * value using the declared length rather than abandon the extension.
+     */
+    public static QuicTransportParameterEntryTypes getParameterEntryType(long id) {
+        if (id < 0 || id > Byte.MAX_VALUE) {
+            return UNKNOWN;
+        }
+        return getParameterEntryType((byte) id);
+    }
+
     public byte getValue() {
         return value;
     }
