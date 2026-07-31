@@ -17,6 +17,7 @@ import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.QuicTransport
 import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.QuicTransportParameters;
 import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.QuicTransportParametersExtensionMessage;
 import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.constants.QuicTransportParameterEntryTypes;
+import de.rub.nds.tlsattacker.transport.ConnectionEndType;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 
@@ -51,6 +52,9 @@ public class QuicTransportParametersExtensionsHandlerTest
                         DataConverter.hexStringToByteArray(
                                 "1234567812345678123456781234567812345678123456781234567812345678123456781234567812"))); // 41 byte long -> minimum length
         msg.setTransportParameterEntries(paramentries);
+
+        // The handler records only what the peer sends.
+        tlsContext.getContext().setTalkingConnectionEndType(ConnectionEndType.SERVER);
 
         handler.adjustTLSExtensionContext(msg);
 

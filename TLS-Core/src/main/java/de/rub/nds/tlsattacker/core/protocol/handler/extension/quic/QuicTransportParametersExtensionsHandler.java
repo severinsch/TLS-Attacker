@@ -27,6 +27,19 @@ public class QuicTransportParametersExtensionsHandler
 
     @Override
     public void adjustTLSExtensionContext(QuicTransportParametersExtensionMessage message) {
+        // Both endpoints send this extension (RFC 9001 section 8.2); record only the peer's.
+        if (tlsContext.getTalkingConnectionEndType()
+                != tlsContext.getChooser().getMyConnectionPeer()) {
+            LOGGER.debug("Not recording locally sent QUIC transport parameters as the peer's");
+            return;
+        }
+        if (message.getQuicTransportParameters() == null) {
+            // Nothing parsed: keep what is already known.
+            LOGGER.warn(
+                    "Received a quic_transport_parameters extension that carries no parsed "
+                            + "parameters; keeping the previously recorded ones");
+            return;
+        }
         LOGGER.debug("Adjust Quic Transport Parameters in Context to:\n{}", message);
         // Write all transport parameters
         tlsContext
