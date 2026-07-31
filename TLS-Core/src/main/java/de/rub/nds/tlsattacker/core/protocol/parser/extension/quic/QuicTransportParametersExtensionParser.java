@@ -15,33 +15,41 @@ import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.QuicTransport
 import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.constants.QuicTransportParameterEntryTypes;
 import de.rub.nds.tlsattacker.core.protocol.parser.extension.ExtensionParser;
 import java.io.InputStream;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public class QuicTransportParametersExtensionParser
         extends ExtensionParser<QuicTransportParametersExtensionMessage> {
+
+    private static final Logger LOGGER = LogManager.getLogger();
 
     public QuicTransportParametersExtensionParser(InputStream stream, TlsContext tlsContext) {
         super(stream, tlsContext);
     }
 
+    /**
+     * Parameter IDs and lengths are varints (RFC 9000 section 18); unknown parameters are skipped
+     * by their length (section 18.1).
+     */
     @Override
     public void parse(QuicTransportParametersExtensionMessage msg) {
         while (getBytesLeft() > 0) {
-            QuicTransportParameterEntry entry = new QuicTransportParameterEntry();
-            QuicTransportParameterEntryTypes types =
-                    QuicTransportParameterEntryTypes.getParameterEntryType(parseByteField(1));
-
-            if (types == QuicTransportParameterEntryTypes.GOOGLE
-                    || types == QuicTransportParameterEntryTypes.PROVISIONAL_PARAMETERS) {
-                parseByteField(1);
-            } else if (types == QuicTransportParameterEntryTypes.UNKNOWN) {
-                // upon finding unknown type, parse all bytes
-                parseTillEnd();
+            long id = parseVariableLengthInteger();
+            long length = parseVariableLengthInteger();
+            if (length < 0 || length > getBytesLeft()) {
+                LOGGER.warn(
+                        "QUIC transport parameter {} declares a length of {} with {} bytes left; "
+                                + "stopping the parse rather than reading past the extension",
+                        id,
+                        length,
+                        getBytesLeft());
                 break;
             }
-            byte length = parseByteField(1);
-            byte[] value = parseByteArrayField(length);
-            entry.setEntryType(types);
-            entry.setEntryLength(length);
+            byte[] value = parseByteArrayField((int) length);
+
+            QuicTransportParameterEntry entry = new QuicTransportParameterEntry();
+            entry.setEntryType(QuicTransportParameterEntryTypes.getParameterEntryType(id));
+            entry.setEntryLength((int) length);
             entry.setEntryValue(value);
             msg.getTransportParameterEntries().add(entry);
         }

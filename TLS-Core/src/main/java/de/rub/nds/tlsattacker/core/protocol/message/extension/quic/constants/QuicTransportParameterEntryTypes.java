@@ -132,6 +132,22 @@ public enum QuicTransportParameterEntryTypes {
         return type;
     }
 
+    /**
+     * Looks a parameter up by its decoded ID. IDs this enum does not model, including GREASE IDs
+     * (RFC 9000 section 18.1), map to {@link #UNKNOWN}.
+     */
+    public static QuicTransportParameterEntryTypes getParameterEntryType(long id) {
+        if (id < 0 || id > Byte.MAX_VALUE) {
+            return UNKNOWN;
+        }
+        QuicTransportParameterEntryTypes type = getParameterEntryType((byte) id);
+        // These two hold the first byte of a two-byte ID, not a decoded ID.
+        if (type == GOOGLE || type == PROVISIONAL_PARAMETERS) {
+            return UNKNOWN;
+        }
+        return type;
+    }
+
     public byte getValue() {
         return value;
     }
