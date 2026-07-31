@@ -17,6 +17,7 @@ import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.QuicTransport
 import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.QuicTransportParameters;
 import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.QuicTransportParametersExtensionMessage;
 import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.constants.QuicTransportParameterEntryTypes;
+import de.rub.nds.tlsattacker.transport.ConnectionEndType;
 import java.util.*;
 import org.junit.jupiter.api.Test;
 
@@ -51,6 +52,14 @@ public class QuicTransportParametersExtensionsHandlerTest
                         DataConverter.hexStringToByteArray(
                                 "1234567812345678123456781234567812345678123456781234567812345678123456781234567812"))); // 41 byte long -> minimum length
         msg.setTransportParameterEntries(paramentries);
+
+        // The context this harness builds is an OutboundConnection, so the local end
+        // is the client and talkingConnectionEndType defaults to CLIENT too — i.e. it
+        // modelled US sending our own transport parameters, and then asserted they had
+        // been recorded as the ones we RECEIVED. quic_transport_parameters is sent by
+        // both endpoints (RFC 9001, Section 8.2), so that is the one case the handler
+        // must not record. Point the test at what it means to test: the peer talking.
+        tlsContext.getContext().setTalkingConnectionEndType(ConnectionEndType.SERVER);
 
         handler.adjustTLSExtensionContext(msg);
 

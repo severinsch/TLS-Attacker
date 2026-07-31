@@ -27,6 +27,32 @@ public class QuicTransportParametersExtensionsHandler
 
     @Override
     public void adjustTLSExtensionContext(QuicTransportParametersExtensionMessage message) {
+        // quic_transport_parameters travels in BOTH directions: the client sends its
+        // own in the ClientHello and the server sends its own in EncryptedExtensions
+        // (RFC 9001, Section 8.2). Extension handlers run on the send path as well as
+        // the receive path, but QuicContext.receivedTransportParameters holds what the
+        // PEER advertised, so it may only be written while the peer is the one
+        // talking. This is the same condition RecordSizeLimitExtensionHandler applies
+        // before recording the peer's advertised record size limit.
+        //
+        // Without the check, sending our own extension overwrote the peer's
+        // parameters: getQuicTransportParameters() is populated only by the parser, so
+        // a locally prepared message carries none and the context was set to null.
+        // Every subsequent read of the peer's limits then saw "not advertised".
+        if (tlsContext.getTalkingConnectionEndType()
+                != tlsContext.getChooser().getMyConnectionPeer()) {
+            LOGGER.debug("Not recording locally sent QUIC transport parameters as the peer's");
+            return;
+        }
+        if (message.getQuicTransportParameters() == null) {
+            // Nothing was parsed out of this extension, so there is nothing the peer
+            // advertised. Keeping what is already in the context is strictly better
+            // than replacing it with null.
+            LOGGER.warn(
+                    "Received a quic_transport_parameters extension that carries no parsed "
+                            + "parameters; keeping the previously recorded ones");
+            return;
+        }
         LOGGER.debug("Adjust Quic Transport Parameters in Context to:\n{}", message);
         // Write all transport parameters
         tlsContext
