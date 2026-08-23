@@ -10,7 +10,7 @@ package de.rub.nds.tlsattacker.core.quic.frame;
 
 import de.rub.nds.modifiablevariable.ModifiableVariableFactory;
 import de.rub.nds.modifiablevariable.ModifiableVariableProperty;
-import de.rub.nds.modifiablevariable.integer.ModifiableInteger;
+import de.rub.nds.modifiablevariable.longint.ModifiableLong;
 import de.rub.nds.tlsattacker.core.quic.constants.QuicFrameType;
 import de.rub.nds.tlsattacker.core.quic.handler.frame.ResetStreamFrameHandler;
 import de.rub.nds.tlsattacker.core.quic.parser.frame.ResetStreamFrameParser;
@@ -23,26 +23,34 @@ import java.io.InputStream;
 @XmlRootElement
 public class ResetStreamFrame extends QuicFrame {
 
-    @ModifiableVariableProperty protected ModifiableInteger streamId;
+    @ModifiableVariableProperty protected ModifiableLong streamId;
 
-    @ModifiableVariableProperty protected ModifiableInteger applicationProtocolErrorCode;
+    @ModifiableVariableProperty protected ModifiableLong applicationProtocolErrorCode;
 
-    @ModifiableVariableProperty protected ModifiableInteger finalSize;
+    @ModifiableVariableProperty protected ModifiableLong finalSize;
 
-    private int streamIdConfig;
-    private int applicationProtocolErrorCodeConfig;
-    private int finalSizeConfig;
+    private long streamIdConfig;
+    private long applicationProtocolErrorCodeConfig;
+    private long finalSizeConfig;
 
     public ResetStreamFrame() {
         super(QuicFrameType.RESET_STREAM_FRAME);
     }
 
     public ResetStreamFrame(
-            int streamIdConfig, int applicationProtocolErrorCodeConfig, int finalSizeConfig) {
+            long streamIdConfig, long applicationProtocolErrorCodeConfig, long finalSizeConfig) {
         this();
         this.streamIdConfig = streamIdConfig;
         this.applicationProtocolErrorCodeConfig = applicationProtocolErrorCodeConfig;
         this.finalSizeConfig = finalSizeConfig;
+    }
+
+    public ResetStreamFrame(
+            int streamIdConfig, int applicationProtocolErrorCodeConfig, int finalSizeConfig) {
+        this(
+                (long) streamIdConfig,
+                (long) applicationProtocolErrorCodeConfig,
+                (long) finalSizeConfig);
     }
 
     @Override
@@ -65,66 +73,90 @@ public class ResetStreamFrame extends QuicFrame {
         return new ResetStreamFrameParser(stream);
     }
 
-    public ModifiableInteger getStreamId() {
+    public ModifiableLong getStreamId() {
         return streamId;
     }
 
-    public void setStreamId(ModifiableInteger streamId) {
+    public void setStreamId(ModifiableLong streamId) {
         this.streamId = streamId;
     }
 
-    public void setStreamId(int streamId) {
+    public void setStreamId(long streamId) {
         this.streamId = ModifiableVariableFactory.safelySetValue(this.streamId, streamId);
     }
 
-    public ModifiableInteger getApplicationProtocolErrorCode() {
+    public void setStreamId(int streamId) {
+        setStreamId((long) streamId);
+    }
+
+    public ModifiableLong getApplicationProtocolErrorCode() {
         return applicationProtocolErrorCode;
     }
 
-    public void setApplicationProtocolErrorCode(ModifiableInteger applicationProtocolErrorCode) {
+    public void setApplicationProtocolErrorCode(ModifiableLong applicationProtocolErrorCode) {
         this.applicationProtocolErrorCode = applicationProtocolErrorCode;
     }
 
-    public void setApplicationProtocolErrorCode(int applicationProtocolErrorCode) {
+    public void setApplicationProtocolErrorCode(long applicationProtocolErrorCode) {
         this.applicationProtocolErrorCode =
                 ModifiableVariableFactory.safelySetValue(
                         this.applicationProtocolErrorCode, applicationProtocolErrorCode);
     }
 
-    public ModifiableInteger getFinalSize() {
+    public void setApplicationProtocolErrorCode(int applicationProtocolErrorCode) {
+        setApplicationProtocolErrorCode((long) applicationProtocolErrorCode);
+    }
+
+    public ModifiableLong getFinalSize() {
         return finalSize;
     }
 
-    public void setFinalSize(ModifiableInteger finalSize) {
+    public void setFinalSize(ModifiableLong finalSize) {
         this.finalSize = finalSize;
     }
 
-    public void setFinalSize(int finalSize) {
+    public void setFinalSize(long finalSize) {
         this.finalSize = ModifiableVariableFactory.safelySetValue(this.finalSize, finalSize);
     }
 
-    public int getStreamIdConfig() {
+    public void setFinalSize(int finalSize) {
+        setFinalSize((long) finalSize);
+    }
+
+    public long getStreamIdConfig() {
         return streamIdConfig;
     }
 
-    public void setStreamIdConfig(int streamIdConfig) {
+    public void setStreamIdConfig(long streamIdConfig) {
         this.streamIdConfig = streamIdConfig;
     }
 
-    public int getApplicationProtocolErrorCodeConfig() {
+    public void setStreamIdConfig(int streamIdConfig) {
+        setStreamIdConfig((long) streamIdConfig);
+    }
+
+    public long getApplicationProtocolErrorCodeConfig() {
         return applicationProtocolErrorCodeConfig;
     }
 
-    public void setApplicationProtocolErrorCodeConfig(int applicationProtocolErrorCodeConfig) {
+    public void setApplicationProtocolErrorCodeConfig(long applicationProtocolErrorCodeConfig) {
         this.applicationProtocolErrorCodeConfig = applicationProtocolErrorCodeConfig;
     }
 
-    public int getFinalSizeConfig() {
+    public void setApplicationProtocolErrorCodeConfig(int applicationProtocolErrorCodeConfig) {
+        setApplicationProtocolErrorCodeConfig((long) applicationProtocolErrorCodeConfig);
+    }
+
+    public long getFinalSizeConfig() {
         return finalSizeConfig;
     }
 
-    public void setFinalSizeConfig(int finalSizeConfig) {
+    public void setFinalSizeConfig(long finalSizeConfig) {
         this.finalSizeConfig = finalSizeConfig;
+    }
+
+    public void setFinalSizeConfig(int finalSizeConfig) {
+        setFinalSizeConfig((long) finalSizeConfig);
     }
 
     @Override

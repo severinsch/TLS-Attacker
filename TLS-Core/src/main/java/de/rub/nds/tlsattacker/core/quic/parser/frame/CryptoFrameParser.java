@@ -29,17 +29,19 @@ public class CryptoFrameParser extends QuicFrameParser<CryptoFrame> {
     }
 
     protected void parseOffset(CryptoFrame frame) {
-        frame.setOffset((int) parseVariableLengthInteger());
+        frame.setOffset(parseVariableLengthInteger());
         LOGGER.debug("Offset: {}", frame.getOffset().getValue());
     }
 
     protected void parseLength(CryptoFrame frame) {
-        frame.setLength((int) parseVariableLengthInteger());
+        frame.setLength(parseVariableLengthInteger());
         LOGGER.debug("Length: {}", frame.getLength().getValue());
     }
 
     protected void parseCryptoData(CryptoFrame frame) {
-        frame.setCryptoData(parseByteArrayField(frame.getLength().getValue().intValue()));
+        frame.setCryptoData(
+                parseByteArrayField(
+                        checkedVarintLength(frame.getLength().getValue(), "CRYPTO Length")));
         LOGGER.debug("Crypto Data: {}", frame.getCryptoData().getValue());
     }
 }

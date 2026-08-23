@@ -145,7 +145,7 @@ public class QuicContext extends LayerContext {
     // Indicates whether a stateless reset packet was received
     private boolean receivedStatelessResetToken;
 
-    private List<Integer> receivedStreamsIds = new ArrayList<>();
+    private List<Long> receivedStreamsIds = new ArrayList<>();
 
     private int amountOfUdpPaddingBytesReceived;
 
@@ -800,12 +800,12 @@ public class QuicContext extends LayerContext {
         this.temporarilyDisabledAcks = temporarilyDisabledAcks;
     }
 
-    public void addReceivedStreamsId(int id) {
+    public void addReceivedStreamsId(long id) {
         receivedStreamsIds.add(id);
     }
 
-    public boolean isReceivedStreamsId(int id) {
-        for (int streamId : receivedStreamsIds) {
+    public boolean isReceivedStreamsId(long id) {
+        for (long streamId : receivedStreamsIds) {
             if (streamId == id) {
                 return true;
             }

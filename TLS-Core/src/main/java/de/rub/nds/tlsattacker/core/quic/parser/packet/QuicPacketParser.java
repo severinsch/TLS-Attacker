@@ -11,6 +11,7 @@ package de.rub.nds.tlsattacker.core.quic.parser.packet;
 import de.rub.nds.tlsattacker.core.layer.data.Parser;
 import de.rub.nds.tlsattacker.core.quic.constants.QuicPacketByteLength;
 import de.rub.nds.tlsattacker.core.quic.packet.QuicPacket;
+import de.rub.nds.tlsattacker.core.quic.util.VariableLengthIntegerEncoding;
 import de.rub.nds.tlsattacker.core.state.quic.QuicContext;
 import java.io.IOException;
 import java.io.InputStream;
@@ -57,7 +58,7 @@ public abstract class QuicPacketParser<T extends QuicPacket> extends Parser<T> {
     protected void parsePacketLength(T packet) {
         try {
             int before = getStream().available();
-            int result = (int) parseVariableLengthInteger();
+            int result = checkedVarintLength(parseVariableLengthInteger(), "QUIC Packet Length");
             int after = getStream().available();
             packet.protectedHeaderHelper.write(quicBuffer.toByteArray());
             quicBuffer.reset();
@@ -91,5 +92,10 @@ public abstract class QuicPacketParser<T extends QuicPacket> extends Parser<T> {
                 packet.getProtectedPacketNumberAndPayload().getValue(), 0, packetNumber, 0, length);
         packet.setProtectedPacketNumber(packetNumber);
         LOGGER.debug("Protected Packet Number: {}", packet.getProtectedPacketNumber().getValue());
+    }
+
+    protected int checkedVarintLength(long value, String fieldName) {
+        return VariableLengthIntegerEncoding.checkLengthAgainstRemaining(
+                value, getBytesLeft(), fieldName);
     }
 }

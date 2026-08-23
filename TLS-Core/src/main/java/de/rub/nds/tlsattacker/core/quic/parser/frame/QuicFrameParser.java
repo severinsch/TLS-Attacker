@@ -10,6 +10,7 @@ package de.rub.nds.tlsattacker.core.quic.parser.frame;
 
 import de.rub.nds.tlsattacker.core.layer.data.Parser;
 import de.rub.nds.tlsattacker.core.quic.frame.QuicFrame;
+import de.rub.nds.tlsattacker.core.quic.util.VariableLengthIntegerEncoding;
 import java.io.InputStream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -23,7 +24,12 @@ public abstract class QuicFrameParser<T extends QuicFrame> extends Parser<T> {
     }
 
     public void parseFrameType(QuicFrame frame) {
-        frame.setFrameType((byte) parseVariableLengthInteger());
+        frame.setFrameType(parseVariableLengthInteger());
         LOGGER.debug("Frame Type: {}", frame.getFrameType().getValue());
+    }
+
+    protected int checkedVarintLength(long value, String fieldName) {
+        return VariableLengthIntegerEncoding.checkLengthAgainstRemaining(
+                value, getBytesLeft(), fieldName);
     }
 }

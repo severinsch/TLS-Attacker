@@ -34,23 +34,26 @@ public class ConnectionCloseFrameParser extends QuicFrameParser<ConnectionCloseF
     }
 
     protected void parseErrorCode(ConnectionCloseFrame frame) {
-        frame.setErrorCode((int) parseVariableLengthInteger());
+        frame.setErrorCode(parseVariableLengthInteger());
         LOGGER.debug("Error Code: {}", frame.getErrorCode().getValue());
     }
 
     protected void parseFrameType(ConnectionCloseFrame frame) {
-        frame.setTriggerFrameType((int) parseVariableLengthInteger());
+        frame.setTriggerFrameType(parseVariableLengthInteger());
         LOGGER.debug("Frame Type: {}", frame.getTriggerFrameType().getValue());
     }
 
     protected void parseReasonPhraseLength(ConnectionCloseFrame frame) {
-        frame.setReasonPhraseLength((int) parseVariableLengthInteger());
+        frame.setReasonPhraseLength(parseVariableLengthInteger());
         LOGGER.debug("Reason Phrase Length: {}", frame.getReasonPhraseLength().getValue());
     }
 
     protected void parseReasonPhrase(ConnectionCloseFrame frame) {
         frame.setReasonPhrase(
-                parseByteArrayField(frame.getReasonPhraseLength().getValue().intValue()));
+                parseByteArrayField(
+                        checkedVarintLength(
+                                frame.getReasonPhraseLength().getValue(),
+                                "CONNECTION_CLOSE Reason Phrase Length")));
         LOGGER.debug("Reason Phrase: {}", frame.getReasonPhrase().getValue());
     }
 }

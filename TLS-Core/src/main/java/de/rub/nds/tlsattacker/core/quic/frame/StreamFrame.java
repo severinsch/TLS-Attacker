@@ -11,7 +11,7 @@ package de.rub.nds.tlsattacker.core.quic.frame;
 import de.rub.nds.modifiablevariable.ModifiableVariableFactory;
 import de.rub.nds.modifiablevariable.ModifiableVariableProperty;
 import de.rub.nds.modifiablevariable.bytearray.ModifiableByteArray;
-import de.rub.nds.modifiablevariable.integer.ModifiableInteger;
+import de.rub.nds.modifiablevariable.longint.ModifiableLong;
 import de.rub.nds.tlsattacker.core.quic.constants.QuicFrameType;
 import de.rub.nds.tlsattacker.core.quic.handler.frame.StreamFrameHandler;
 import de.rub.nds.tlsattacker.core.quic.parser.frame.StreamFrameParser;
@@ -25,18 +25,18 @@ import java.io.InputStream;
 @XmlRootElement(name = "StreamFrame")
 public class StreamFrame extends QuicFrame {
 
-    @ModifiableVariableProperty protected ModifiableInteger streamId;
+    @ModifiableVariableProperty protected ModifiableLong streamId;
 
-    @ModifiableVariableProperty protected ModifiableInteger offset;
+    @ModifiableVariableProperty protected ModifiableLong offset;
 
-    @ModifiableVariableProperty protected ModifiableInteger length;
+    @ModifiableVariableProperty protected ModifiableLong length;
 
     @ModifiableVariableProperty protected ModifiableByteArray data;
 
-    private int streamIdConfig;
+    private long streamIdConfig;
     private byte[] dataConfig;
-    private int lengthConfig;
-    private int offsetConfig;
+    private long lengthConfig;
+    private long offsetConfig;
     private boolean finalFrameConfig;
 
     public StreamFrame() {
@@ -48,7 +48,7 @@ public class StreamFrame extends QuicFrame {
     }
 
     public StreamFrame(
-            byte[] dataConfig, int streamIdConfig, int offsetConfig, boolean finalFrameConfig) {
+            byte[] dataConfig, long streamIdConfig, long offsetConfig, boolean finalFrameConfig) {
         this();
         this.dataConfig = dataConfig;
         this.streamIdConfig = streamIdConfig;
@@ -57,7 +57,12 @@ public class StreamFrame extends QuicFrame {
         this.offsetConfig = offsetConfig;
     }
 
-    public StreamFrame(byte[] dataConfig, int streamIdConfig, boolean finalFrameConfig) {
+    public StreamFrame(
+            byte[] dataConfig, int streamIdConfig, int offsetConfig, boolean finalFrameConfig) {
+        this(dataConfig, (long) streamIdConfig, (long) offsetConfig, finalFrameConfig);
+    }
+
+    public StreamFrame(byte[] dataConfig, long streamIdConfig, boolean finalFrameConfig) {
         this();
         this.dataConfig = dataConfig;
         this.streamIdConfig = streamIdConfig;
@@ -66,8 +71,16 @@ public class StreamFrame extends QuicFrame {
         this.offsetConfig = 0;
     }
 
-    public StreamFrame(byte[] dataConfig, int streamIdConfig) {
+    public StreamFrame(byte[] dataConfig, int streamIdConfig, boolean finalFrameConfig) {
+        this(dataConfig, (long) streamIdConfig, finalFrameConfig);
+    }
+
+    public StreamFrame(byte[] dataConfig, long streamIdConfig) {
         this(dataConfig, streamIdConfig, false);
+    }
+
+    public StreamFrame(byte[] dataConfig, int streamIdConfig) {
+        this(dataConfig, (long) streamIdConfig);
     }
 
     @Override
@@ -90,28 +103,40 @@ public class StreamFrame extends QuicFrame {
         return new StreamFrameParser(stream);
     }
 
-    public ModifiableInteger getStreamId() {
+    public ModifiableLong getStreamId() {
         return streamId;
     }
 
-    public void setStreamId(int streamId) {
+    public void setStreamId(long streamId) {
         this.streamId = ModifiableVariableFactory.safelySetValue(this.streamId, streamId);
     }
 
-    public ModifiableInteger getOffset() {
+    public void setStreamId(int streamId) {
+        setStreamId((long) streamId);
+    }
+
+    public ModifiableLong getOffset() {
         return offset;
     }
 
-    public void setOffset(int offset) {
+    public void setOffset(long offset) {
         this.offset = ModifiableVariableFactory.safelySetValue(this.offset, offset);
     }
 
-    public ModifiableInteger getLength() {
+    public void setOffset(int offset) {
+        setOffset((long) offset);
+    }
+
+    public ModifiableLong getLength() {
         return length;
     }
 
-    public void setLength(int length) {
+    public void setLength(long length) {
         this.length = ModifiableVariableFactory.safelySetValue(this.length, length);
+    }
+
+    public void setLength(int length) {
+        setLength((long) length);
     }
 
     public ModifiableByteArray getData() {
@@ -122,12 +147,16 @@ public class StreamFrame extends QuicFrame {
         this.data = ModifiableVariableFactory.safelySetValue(this.data, data);
     }
 
-    public int getStreamIdConfig() {
+    public long getStreamIdConfig() {
         return streamIdConfig;
     }
 
-    public void setStreamIdConfig(int streamIdConfig) {
+    public void setStreamIdConfig(long streamIdConfig) {
         this.streamIdConfig = streamIdConfig;
+    }
+
+    public void setStreamIdConfig(int streamIdConfig) {
+        setStreamIdConfig((long) streamIdConfig);
     }
 
     public byte[] getDataConfig() {
@@ -138,20 +167,28 @@ public class StreamFrame extends QuicFrame {
         this.dataConfig = dataConfig;
     }
 
-    public int getLengthConfig() {
+    public long getLengthConfig() {
         return lengthConfig;
     }
 
-    public void setLengthConfig(int lengthConfig) {
+    public void setLengthConfig(long lengthConfig) {
         this.lengthConfig = lengthConfig;
     }
 
-    public int getOffsetConfig() {
+    public void setLengthConfig(int lengthConfig) {
+        setLengthConfig((long) lengthConfig);
+    }
+
+    public long getOffsetConfig() {
         return offsetConfig;
     }
 
-    public void setOffsetConfig(int offsetConfig) {
+    public void setOffsetConfig(long offsetConfig) {
         this.offsetConfig = offsetConfig;
+    }
+
+    public void setOffsetConfig(int offsetConfig) {
+        setOffsetConfig((long) offsetConfig);
     }
 
     public boolean isFinalFrameConfig() {

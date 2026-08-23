@@ -28,12 +28,12 @@ public class MaxStreamDataFrameParser extends QuicFrameParser<MaxStreamDataFrame
     }
 
     protected void parseStreamId(MaxStreamDataFrame frame) {
-        frame.setStreamId((int) parseVariableLengthInteger());
+        frame.setStreamId(parseVariableLengthInteger());
         LOGGER.debug("Stream ID: {}", frame.getStreamId().getValue());
     }
 
     protected void parseMaximumStreamData(MaxStreamDataFrame frame) {
-        frame.setMaximumStreamData((int) parseVariableLengthInteger());
+        frame.setMaximumStreamData(parseVariableLengthInteger());
         LOGGER.debug("Maximum Stream Data: {}", frame.getMaximumStreamData().getValue());
     }
 }

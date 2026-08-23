@@ -33,7 +33,7 @@ public class DatagramFrameParser extends QuicFrameParser<DatagramFrame> {
     }
 
     protected void parseLength(DatagramFrame frame) {
-        frame.setLength((int) parseVariableLengthInteger());
+        frame.setLength(parseVariableLengthInteger());
         LOGGER.debug("Length: {}", frame.getLength().getValue());
     }
 
@@ -41,7 +41,9 @@ public class DatagramFrameParser extends QuicFrameParser<DatagramFrame> {
         if (frame.getLength() == null) {
             frame.setData(parseTillEnd());
         } else {
-            frame.setData(parseByteArrayField(frame.getLength().getValue()));
+            frame.setData(
+                    parseByteArrayField(
+                            checkedVarintLength(frame.getLength().getValue(), "DATAGRAM Length")));
         }
         LOGGER.debug("Data: {}", frame.getData().getValue());
     }

@@ -27,7 +27,7 @@ public class MaxDataFrameParser extends QuicFrameParser<MaxDataFrame> {
     }
 
     protected void parseMaximumData(MaxDataFrame frame) {
-        frame.setMaximumData((int) parseVariableLengthInteger());
+        frame.setMaximumData(parseVariableLengthInteger());
         LOGGER.debug("Maximum Data: {}", frame.getMaximumData().getValue());
     }
 }

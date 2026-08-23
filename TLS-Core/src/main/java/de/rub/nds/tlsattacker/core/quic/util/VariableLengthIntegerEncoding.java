@@ -9,6 +9,7 @@
 package de.rub.nds.tlsattacker.core.quic.util;
 
 import de.rub.nds.modifiablevariable.util.DataConverter;
+import de.rub.nds.protocol.exception.EndOfStreamException;
 import java.io.IOException;
 import java.io.InputStream;
 
@@ -22,6 +23,10 @@ public class VariableLengthIntegerEncoding {
      * @return byte array with the encoded value
      */
     public static byte[] encodeVariableLengthInteger(long value) {
+        if (value < 0) {
+            throw new IllegalArgumentException(
+                    "Value must not be negative for variable length integer: " + value);
+        }
         if (value > EncodingLength.SIXTY_TWO_BITS.maxValue) {
             throw new IllegalArgumentException(
                     "Value is too long to encode in variable length integer: " + value);
@@ -43,6 +48,23 @@ public class VariableLengthIntegerEncoding {
     }
 
     /**
+     * Checks a decoded length field against the bytes that are left to parse.
+     *
+     * @param value the decoded length
+     * @param bytesLeft the number of bytes left in the packet or frame
+     * @param fieldName the field name for the error message
+     * @return the length as an int
+     * @throws EndOfStreamException if fewer than {@code value} bytes are left
+     */
+    public static int checkLengthAgainstRemaining(long value, int bytesLeft, String fieldName) {
+        if (value > bytesLeft) {
+            throw new EndOfStreamException(
+                    fieldName + " exceeds the remaining bytes: " + value + " > " + bytesLeft);
+        }
+        return (int) value;
+    }
+
+    /**
      * Decode variable length integer from fixed byte array. Used in cases where the length of the
      * field is separately encoded and it can be parsed without relying on the prefix (Transport
      * Parameters with separate length field)
@@ -51,9 +73,19 @@ public class VariableLengthIntegerEncoding {
      * @return decoded integer as java long
      */
     public static long decodeVariableLengthInteger(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            throw new IllegalArgumentException("Variable length integer input must not be empty");
+        }
         long v = bytes[0];
         byte prefix = (byte) ((v & 0xff) >> 6);
         byte length = (byte) ((1 & 0xff) << prefix);
+        if (bytes.length < length) {
+            throw new IllegalArgumentException(
+                    "Variable length integer input is truncated: expected "
+                            + length
+                            + " bytes, got "
+                            + bytes.length);
+        }
         v = (byte) v & 0x3f;
         for (int i = 1; i < length; i++) {
             v = (v << 8) + (bytes[i] & 0xff);

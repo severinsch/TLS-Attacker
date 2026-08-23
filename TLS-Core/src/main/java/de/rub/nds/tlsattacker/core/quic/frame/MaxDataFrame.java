@@ -10,7 +10,7 @@ package de.rub.nds.tlsattacker.core.quic.frame;
 
 import de.rub.nds.modifiablevariable.ModifiableVariableFactory;
 import de.rub.nds.modifiablevariable.ModifiableVariableProperty;
-import de.rub.nds.modifiablevariable.integer.ModifiableInteger;
+import de.rub.nds.modifiablevariable.longint.ModifiableLong;
 import de.rub.nds.tlsattacker.core.quic.constants.QuicFrameType;
 import de.rub.nds.tlsattacker.core.quic.handler.frame.MaxDataFrameHandler;
 import de.rub.nds.tlsattacker.core.quic.parser.frame.MaxDataFrameParser;
@@ -23,17 +23,21 @@ import java.io.InputStream;
 @XmlRootElement
 public class MaxDataFrame extends QuicFrame {
 
-    @ModifiableVariableProperty protected ModifiableInteger maximumData;
+    @ModifiableVariableProperty protected ModifiableLong maximumData;
 
-    private int maximumDataConfig;
+    private long maximumDataConfig;
 
     public MaxDataFrame() {
         super(QuicFrameType.MAX_DATA_FRAME);
     }
 
-    public MaxDataFrame(int maximumDataConfig) {
+    public MaxDataFrame(long maximumDataConfig) {
         this();
         this.maximumDataConfig = maximumDataConfig;
+    }
+
+    public MaxDataFrame(int maximumDataConfig) {
+        this((long) maximumDataConfig);
     }
 
     @Override
@@ -56,24 +60,32 @@ public class MaxDataFrame extends QuicFrame {
         return new MaxDataFrameParser(stream);
     }
 
-    public ModifiableInteger getMaximumData() {
+    public ModifiableLong getMaximumData() {
         return maximumData;
     }
 
-    public void setMaximumData(ModifiableInteger maximumData) {
+    public void setMaximumData(ModifiableLong maximumData) {
         this.maximumData = maximumData;
     }
 
-    public void setMaximumData(int maximumData) {
+    public void setMaximumData(long maximumData) {
         this.maximumData = ModifiableVariableFactory.safelySetValue(this.maximumData, maximumData);
     }
 
-    public int getMaximumDataConfig() {
+    public void setMaximumData(int maximumData) {
+        setMaximumData((long) maximumData);
+    }
+
+    public long getMaximumDataConfig() {
         return maximumDataConfig;
     }
 
-    public void setMaximumDataConfig(int maximumDataConfig) {
+    public void setMaximumDataConfig(long maximumDataConfig) {
         this.maximumDataConfig = maximumDataConfig;
+    }
+
+    public void setMaximumDataConfig(int maximumDataConfig) {
+        setMaximumDataConfig((long) maximumDataConfig);
     }
 
     @Override

@@ -29,19 +29,19 @@ public class ResetStreamFrameParser extends QuicFrameParser<ResetStreamFrame> {
     }
 
     protected void parseStreamId(ResetStreamFrame frame) {
-        frame.setStreamId((int) parseVariableLengthInteger());
+        frame.setStreamId(parseVariableLengthInteger());
         LOGGER.debug("Stream ID: {}", frame.getStreamId().getValue());
     }
 
     protected void parseApplicationProtocolErrorCode(ResetStreamFrame frame) {
-        frame.setApplicationProtocolErrorCode((int) parseVariableLengthInteger());
+        frame.setApplicationProtocolErrorCode(parseVariableLengthInteger());
         LOGGER.debug(
                 "Application Protocol Error Code: {}",
                 frame.getApplicationProtocolErrorCode().getValue());
     }
 
     protected void parseFinalSize(ResetStreamFrame frame) {
-        frame.setFinalSize((int) parseVariableLengthInteger());
+        frame.setFinalSize(parseVariableLengthInteger());
         LOGGER.debug("Final Size: {}", frame.getFinalSize().getValue());
     }
 }

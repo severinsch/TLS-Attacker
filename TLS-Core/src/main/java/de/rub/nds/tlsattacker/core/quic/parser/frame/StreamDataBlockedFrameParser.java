@@ -28,12 +28,12 @@ public class StreamDataBlockedFrameParser extends QuicFrameParser<StreamDataBloc
     }
 
     protected void parseStreamId(StreamDataBlockedFrame frame) {
-        frame.setStreamId((int) parseVariableLengthInteger());
+        frame.setStreamId(parseVariableLengthInteger());
         LOGGER.debug("Stream ID: {}", frame.getStreamId().getValue());
     }
 
     protected void parseMaximumStreamData(StreamDataBlockedFrame frame) {
-        frame.setMaximumStreamData((int) parseVariableLengthInteger());
+        frame.setMaximumStreamData(parseVariableLengthInteger());
         LOGGER.debug("Maximum Stream Data: {}", frame.getMaximumStreamData().getValue());
     }
 }

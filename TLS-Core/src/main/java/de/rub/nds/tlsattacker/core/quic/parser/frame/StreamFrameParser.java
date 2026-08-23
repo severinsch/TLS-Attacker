@@ -44,17 +44,17 @@ public class StreamFrameParser extends QuicFrameParser<StreamFrame> {
     }
 
     protected void parseStreamId(StreamFrame frame) {
-        frame.setStreamId((int) parseVariableLengthInteger());
+        frame.setStreamId(parseVariableLengthInteger());
         LOGGER.debug("Stream ID: {}", frame.getStreamId().getValue());
     }
 
     protected void parseOffset(StreamFrame frame) {
-        frame.setOffset((int) parseVariableLengthInteger());
+        frame.setOffset(parseVariableLengthInteger());
         LOGGER.debug("Offset: {}", frame.getOffset().getValue());
     }
 
     protected void parseLength(StreamFrame frame) {
-        frame.setLength((int) parseVariableLengthInteger());
+        frame.setLength(parseVariableLengthInteger());
         LOGGER.debug("Length: {}", frame.getLength().getValue());
     }
 
@@ -65,7 +65,9 @@ public class StreamFrameParser extends QuicFrameParser<StreamFrame> {
                 || frameType == QuicFrameType.STREAM_FRAME_OFF_FIN) {
             frame.setData(parseTillEnd());
         } else {
-            frame.setData(parseByteArrayField(frame.getLength().getValue()));
+            frame.setData(
+                    parseByteArrayField(
+                            checkedVarintLength(frame.getLength().getValue(), "STREAM Length")));
         }
         LOGGER.debug("Data: {}", frame.getData().getValue());
     }

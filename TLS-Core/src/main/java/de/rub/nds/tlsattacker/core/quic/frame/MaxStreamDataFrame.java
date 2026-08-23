@@ -10,7 +10,7 @@ package de.rub.nds.tlsattacker.core.quic.frame;
 
 import de.rub.nds.modifiablevariable.ModifiableVariableFactory;
 import de.rub.nds.modifiablevariable.ModifiableVariableProperty;
-import de.rub.nds.modifiablevariable.integer.ModifiableInteger;
+import de.rub.nds.modifiablevariable.longint.ModifiableLong;
 import de.rub.nds.tlsattacker.core.quic.constants.QuicFrameType;
 import de.rub.nds.tlsattacker.core.quic.handler.frame.MaxStreamDataFrameHandler;
 import de.rub.nds.tlsattacker.core.quic.parser.frame.MaxStreamDataFrameParser;
@@ -23,22 +23,26 @@ import java.io.InputStream;
 @XmlRootElement
 public class MaxStreamDataFrame extends QuicFrame {
 
-    @ModifiableVariableProperty protected ModifiableInteger streamId;
+    @ModifiableVariableProperty protected ModifiableLong streamId;
 
-    @ModifiableVariableProperty protected ModifiableInteger maximumStreamData;
+    @ModifiableVariableProperty protected ModifiableLong maximumStreamData;
 
-    private int streamIdConfig;
+    private long streamIdConfig;
 
-    private int maximumStreamDataConfig;
+    private long maximumStreamDataConfig;
 
     public MaxStreamDataFrame() {
         super(QuicFrameType.MAX_STREAM_DATA_FRAME);
     }
 
-    public MaxStreamDataFrame(int streamIdConfig, int maximumStreamDataConfig) {
+    public MaxStreamDataFrame(long streamIdConfig, long maximumStreamDataConfig) {
         this();
         this.streamIdConfig = streamIdConfig;
         this.maximumStreamDataConfig = maximumStreamDataConfig;
+    }
+
+    public MaxStreamDataFrame(int streamIdConfig, int maximumStreamDataConfig) {
+        this((long) streamIdConfig, (long) maximumStreamDataConfig);
     }
 
     @Override
@@ -61,45 +65,61 @@ public class MaxStreamDataFrame extends QuicFrame {
         return new MaxStreamDataFrameParser(stream);
     }
 
-    public ModifiableInteger getStreamId() {
+    public ModifiableLong getStreamId() {
         return streamId;
     }
 
-    public void setStreamId(ModifiableInteger streamId) {
+    public void setStreamId(ModifiableLong streamId) {
         this.streamId = streamId;
     }
 
-    public void setStreamId(int streamId) {
+    public void setStreamId(long streamId) {
         this.streamId = ModifiableVariableFactory.safelySetValue(this.streamId, streamId);
     }
 
-    public ModifiableInteger getMaximumStreamData() {
+    public void setStreamId(int streamId) {
+        setStreamId((long) streamId);
+    }
+
+    public ModifiableLong getMaximumStreamData() {
         return maximumStreamData;
     }
 
-    public void setMaximumStreamData(ModifiableInteger maximumStreamData) {
+    public void setMaximumStreamData(ModifiableLong maximumStreamData) {
         this.maximumStreamData = maximumStreamData;
     }
 
-    public void setMaximumStreamData(int maximumStreamData) {
+    public void setMaximumStreamData(long maximumStreamData) {
         this.maximumStreamData =
                 ModifiableVariableFactory.safelySetValue(this.maximumStreamData, maximumStreamData);
     }
 
-    public int getStreamIdConfig() {
+    public void setMaximumStreamData(int maximumStreamData) {
+        setMaximumStreamData((long) maximumStreamData);
+    }
+
+    public long getStreamIdConfig() {
         return streamIdConfig;
     }
 
-    public void setStreamIdConfig(int streamIdConfig) {
+    public void setStreamIdConfig(long streamIdConfig) {
         this.streamIdConfig = streamIdConfig;
     }
 
-    public int getMaximumStreamDataConfig() {
+    public void setStreamIdConfig(int streamIdConfig) {
+        setStreamIdConfig((long) streamIdConfig);
+    }
+
+    public long getMaximumStreamDataConfig() {
         return maximumStreamDataConfig;
     }
 
-    public void setMaximumStreamDataConfig(int maximumStreamDataConfig) {
+    public void setMaximumStreamDataConfig(long maximumStreamDataConfig) {
         this.maximumStreamDataConfig = maximumStreamDataConfig;
+    }
+
+    public void setMaximumStreamDataConfig(int maximumStreamDataConfig) {
+        setMaximumStreamDataConfig((long) maximumStreamDataConfig);
     }
 
     @Override
