@@ -28,12 +28,12 @@ public class StopSendingFrameParser extends QuicFrameParser<StopSendingFrame> {
     }
 
     protected void parseStreamId(StopSendingFrame frame) {
-        frame.setStreamId((int) parseVariableLengthInteger());
+        frame.setStreamId(parseVariableLengthInteger());
         LOGGER.debug("Stream ID: {}", frame.getStreamId().getValue());
     }
 
     protected void parseApplicationProtocolErrorCode(StopSendingFrame frame) {
-        frame.setApplicationProtocolErrorCode((int) parseVariableLengthInteger());
+        frame.setApplicationProtocolErrorCode(parseVariableLengthInteger());
         LOGGER.debug(
                 "Application Protocol Error Code: {}",
                 frame.getApplicationProtocolErrorCode().getValue());

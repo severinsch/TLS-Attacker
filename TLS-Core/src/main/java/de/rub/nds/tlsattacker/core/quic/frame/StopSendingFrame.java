@@ -10,7 +10,7 @@ package de.rub.nds.tlsattacker.core.quic.frame;
 
 import de.rub.nds.modifiablevariable.ModifiableVariableFactory;
 import de.rub.nds.modifiablevariable.ModifiableVariableProperty;
-import de.rub.nds.modifiablevariable.integer.ModifiableInteger;
+import de.rub.nds.modifiablevariable.longint.ModifiableLong;
 import de.rub.nds.tlsattacker.core.quic.constants.QuicFrameType;
 import de.rub.nds.tlsattacker.core.quic.handler.frame.StopSendingFrameHandler;
 import de.rub.nds.tlsattacker.core.quic.parser.frame.StopSendingFrameParser;
@@ -23,21 +23,25 @@ import java.io.InputStream;
 @XmlRootElement
 public class StopSendingFrame extends QuicFrame {
 
-    @ModifiableVariableProperty protected ModifiableInteger streamId;
+    @ModifiableVariableProperty protected ModifiableLong streamId;
 
-    @ModifiableVariableProperty protected ModifiableInteger applicationProtocolErrorCode;
+    @ModifiableVariableProperty protected ModifiableLong applicationProtocolErrorCode;
 
-    private int streamIdConfig;
-    private int applicationProtocolErrorCodeConfig;
+    private long streamIdConfig;
+    private long applicationProtocolErrorCodeConfig;
 
     public StopSendingFrame() {
         super(QuicFrameType.STOP_SENDING_FRAME);
     }
 
-    public StopSendingFrame(int streamIdConfig, int applicationProtocolErrorCodeConfig) {
+    public StopSendingFrame(long streamIdConfig, long applicationProtocolErrorCodeConfig) {
         this();
         this.streamIdConfig = streamIdConfig;
         this.applicationProtocolErrorCodeConfig = applicationProtocolErrorCodeConfig;
+    }
+
+    public StopSendingFrame(int streamIdConfig, int applicationProtocolErrorCodeConfig) {
+        this((long) streamIdConfig, (long) applicationProtocolErrorCodeConfig);
     }
 
     @Override
@@ -60,46 +64,62 @@ public class StopSendingFrame extends QuicFrame {
         return new StopSendingFrameParser(stream);
     }
 
-    public ModifiableInteger getStreamId() {
+    public ModifiableLong getStreamId() {
         return streamId;
     }
 
-    public void setStreamId(ModifiableInteger streamId) {
+    public void setStreamId(ModifiableLong streamId) {
         this.streamId = streamId;
     }
 
-    public void setStreamId(int streamId) {
+    public void setStreamId(long streamId) {
         this.streamId = ModifiableVariableFactory.safelySetValue(this.streamId, streamId);
     }
 
-    public ModifiableInteger getApplicationProtocolErrorCode() {
+    public void setStreamId(int streamId) {
+        setStreamId((long) streamId);
+    }
+
+    public ModifiableLong getApplicationProtocolErrorCode() {
         return applicationProtocolErrorCode;
     }
 
-    public void setApplicationProtocolErrorCode(ModifiableInteger applicationProtocolErrorCode) {
+    public void setApplicationProtocolErrorCode(ModifiableLong applicationProtocolErrorCode) {
         this.applicationProtocolErrorCode = applicationProtocolErrorCode;
     }
 
-    public void setApplicationProtocolErrorCode(int applicationProtocolErrorCode) {
+    public void setApplicationProtocolErrorCode(long applicationProtocolErrorCode) {
         this.applicationProtocolErrorCode =
                 ModifiableVariableFactory.safelySetValue(
                         this.applicationProtocolErrorCode, applicationProtocolErrorCode);
     }
 
-    public int getStreamIdConfig() {
+    public void setApplicationProtocolErrorCode(int applicationProtocolErrorCode) {
+        setApplicationProtocolErrorCode((long) applicationProtocolErrorCode);
+    }
+
+    public long getStreamIdConfig() {
         return streamIdConfig;
     }
 
-    public void setStreamIdConfig(int streamIdConfig) {
+    public void setStreamIdConfig(long streamIdConfig) {
         this.streamIdConfig = streamIdConfig;
     }
 
-    public int getApplicationProtocolErrorCodeConfig() {
+    public void setStreamIdConfig(int streamIdConfig) {
+        setStreamIdConfig((long) streamIdConfig);
+    }
+
+    public long getApplicationProtocolErrorCodeConfig() {
         return applicationProtocolErrorCodeConfig;
     }
 
-    public void setApplicationProtocolErrorCodeConfig(int applicationProtocolErrorCodeConfig) {
+    public void setApplicationProtocolErrorCodeConfig(long applicationProtocolErrorCodeConfig) {
         this.applicationProtocolErrorCodeConfig = applicationProtocolErrorCodeConfig;
+    }
+
+    public void setApplicationProtocolErrorCodeConfig(int applicationProtocolErrorCodeConfig) {
+        setApplicationProtocolErrorCodeConfig((long) applicationProtocolErrorCodeConfig);
     }
 
     @Override

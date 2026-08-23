@@ -28,12 +28,15 @@ public class NewTokenFrameParser extends QuicFrameParser<NewTokenFrame> {
     }
 
     protected void parseLength(NewTokenFrame frame) {
-        frame.setTokenLength((int) parseVariableLengthInteger());
+        frame.setTokenLength(parseVariableLengthInteger());
         LOGGER.debug("Length: {}", frame.getTokenLength().getValue());
     }
 
     protected void parseToken(NewTokenFrame frame) {
-        frame.setToken(parseByteArrayField(frame.getTokenLength().getValue().intValue()));
+        frame.setToken(
+                parseByteArrayField(
+                        checkedVarintLength(
+                                frame.getTokenLength().getValue(), "NEW_TOKEN Token Length")));
         LOGGER.debug("Token: {}", frame.getToken().getValue());
     }
 }

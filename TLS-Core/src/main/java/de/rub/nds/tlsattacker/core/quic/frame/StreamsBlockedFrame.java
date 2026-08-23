@@ -10,7 +10,7 @@ package de.rub.nds.tlsattacker.core.quic.frame;
 
 import de.rub.nds.modifiablevariable.ModifiableVariableFactory;
 import de.rub.nds.modifiablevariable.ModifiableVariableProperty;
-import de.rub.nds.modifiablevariable.integer.ModifiableInteger;
+import de.rub.nds.modifiablevariable.longint.ModifiableLong;
 import de.rub.nds.tlsattacker.core.quic.constants.QuicFrameType;
 import de.rub.nds.tlsattacker.core.quic.handler.frame.StreamsBlockedFrameHandler;
 import de.rub.nds.tlsattacker.core.quic.parser.frame.StreamsBlockedFrameParser;
@@ -23,9 +23,9 @@ import java.io.InputStream;
 @XmlRootElement
 public class StreamsBlockedFrame extends QuicFrame {
 
-    @ModifiableVariableProperty protected ModifiableInteger maximumStreams;
+    @ModifiableVariableProperty protected ModifiableLong maximumStreams;
 
-    private int maximumStreamsConfig;
+    private long maximumStreamsConfig;
 
     @SuppressWarnings("unused") // JAXB
     private StreamsBlockedFrame() {}
@@ -38,9 +38,13 @@ public class StreamsBlockedFrame extends QuicFrame {
         }
     }
 
-    public StreamsBlockedFrame(boolean isBidirectional, int maximumStreamsConfig) {
+    public StreamsBlockedFrame(boolean isBidirectional, long maximumStreamsConfig) {
         this(isBidirectional);
         this.maximumStreamsConfig = maximumStreamsConfig;
+    }
+
+    public StreamsBlockedFrame(boolean isBidirectional, int maximumStreamsConfig) {
+        this(isBidirectional, (long) maximumStreamsConfig);
     }
 
     @Override
@@ -63,25 +67,33 @@ public class StreamsBlockedFrame extends QuicFrame {
         return new StreamsBlockedFrameParser(stream);
     }
 
-    public ModifiableInteger getMaximumStreams() {
+    public ModifiableLong getMaximumStreams() {
         return maximumStreams;
     }
 
-    public void setMaximumStreams(ModifiableInteger maximumStreams) {
+    public void setMaximumStreams(ModifiableLong maximumStreams) {
         this.maximumStreams = maximumStreams;
     }
 
-    public void setMaximumStreams(int maximumStreams) {
+    public void setMaximumStreams(long maximumStreams) {
         this.maximumStreams =
                 ModifiableVariableFactory.safelySetValue(this.maximumStreams, maximumStreams);
     }
 
-    public int getMaximumStreamsConfig() {
+    public void setMaximumStreams(int maximumStreams) {
+        setMaximumStreams((long) maximumStreams);
+    }
+
+    public long getMaximumStreamsConfig() {
         return maximumStreamsConfig;
     }
 
-    public void setMaximumStreamsConfig(int maximumStreamsConfig) {
+    public void setMaximumStreamsConfig(long maximumStreamsConfig) {
         this.maximumStreamsConfig = maximumStreamsConfig;
+    }
+
+    public void setMaximumStreamsConfig(int maximumStreamsConfig) {
+        setMaximumStreamsConfig((long) maximumStreamsConfig);
     }
 
     @Override

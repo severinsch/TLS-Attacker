@@ -61,7 +61,17 @@ public class ConnectionCloseFrame extends QuicFrame {
         this.errorCodeConfig = errorCodeConfig;
     }
 
+    public ConnectionCloseFrame(int errorCodeConfig) {
+        this((long) errorCodeConfig);
+    }
+
     public ConnectionCloseFrame(int errorCodeConfig, String reasonPhraseConfig) {
+        this(errorCodeConfig);
+        this.reasonPhraseConfig = reasonPhraseConfig.getBytes(StandardCharsets.UTF_8);
+        this.reasonPhraseLengthConfig = this.reasonPhraseConfig.length;
+    }
+
+    public ConnectionCloseFrame(long errorCodeConfig, String reasonPhraseConfig) {
         this(errorCodeConfig);
         this.reasonPhraseConfig = reasonPhraseConfig.getBytes(StandardCharsets.UTF_8);
         this.reasonPhraseLengthConfig = this.reasonPhraseConfig.length;
@@ -69,6 +79,14 @@ public class ConnectionCloseFrame extends QuicFrame {
 
     public ConnectionCloseFrame(
             int errorCodeConfig, long triggerFrameTypeConfig, String reasonPhraseConfig) {
+        this(errorCodeConfig);
+        this.reasonPhraseConfig = reasonPhraseConfig.getBytes(StandardCharsets.UTF_8);
+        this.reasonPhraseLengthConfig = this.reasonPhraseConfig.length;
+        this.triggerFrameTypeConfig = triggerFrameTypeConfig;
+    }
+
+    public ConnectionCloseFrame(
+            long errorCodeConfig, long triggerFrameTypeConfig, String reasonPhraseConfig) {
         this(errorCodeConfig);
         this.reasonPhraseConfig = reasonPhraseConfig.getBytes(StandardCharsets.UTF_8);
         this.reasonPhraseLengthConfig = this.reasonPhraseConfig.length;
@@ -151,6 +169,10 @@ public class ConnectionCloseFrame extends QuicFrame {
         this.errorCodeConfig = errorCodeConfig;
     }
 
+    public void setErrorCodeConfig(int errorCodeConfig) {
+        setErrorCodeConfig((long) errorCodeConfig);
+    }
+
     public long getTriggerFrameTypeConfig() {
         return triggerFrameTypeConfig;
     }
@@ -159,12 +181,20 @@ public class ConnectionCloseFrame extends QuicFrame {
         this.triggerFrameTypeConfig = triggerFrameTypeConfig;
     }
 
+    public void setTriggerFrameTypeConfig(int triggerFrameTypeConfig) {
+        setTriggerFrameTypeConfig((long) triggerFrameTypeConfig);
+    }
+
     public long getReasonPhraseLengthConfig() {
         return reasonPhraseLengthConfig;
     }
 
     public void setReasonPhraseLengthConfig(long reasonPhraseLengthConfig) {
         this.reasonPhraseLengthConfig = reasonPhraseLengthConfig;
+    }
+
+    public void setReasonPhraseLengthConfig(int reasonPhraseLengthConfig) {
+        setReasonPhraseLengthConfig((long) reasonPhraseLengthConfig);
     }
 
     public byte[] getReasonPhraseConfig() {

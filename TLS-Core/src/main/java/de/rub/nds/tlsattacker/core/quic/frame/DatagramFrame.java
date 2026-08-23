@@ -11,7 +11,7 @@ package de.rub.nds.tlsattacker.core.quic.frame;
 import de.rub.nds.modifiablevariable.ModifiableVariableFactory;
 import de.rub.nds.modifiablevariable.ModifiableVariableProperty;
 import de.rub.nds.modifiablevariable.bytearray.ModifiableByteArray;
-import de.rub.nds.modifiablevariable.integer.ModifiableInteger;
+import de.rub.nds.modifiablevariable.longint.ModifiableLong;
 import de.rub.nds.tlsattacker.core.quic.constants.QuicFrameType;
 import de.rub.nds.tlsattacker.core.quic.handler.frame.DatagramFrameHandler;
 import de.rub.nds.tlsattacker.core.quic.parser.frame.DatagramFrameParser;
@@ -24,11 +24,11 @@ import java.io.InputStream;
 @XmlRootElement
 public class DatagramFrame extends QuicFrame {
 
-    @ModifiableVariableProperty protected ModifiableInteger length;
+    @ModifiableVariableProperty protected ModifiableLong length;
 
     @ModifiableVariableProperty protected ModifiableByteArray data;
 
-    private int lengthConfig;
+    private long lengthConfig;
     private byte[] dataConfig;
 
     private boolean hasLengthField;
@@ -45,10 +45,14 @@ public class DatagramFrame extends QuicFrame {
         }
     }
 
-    public DatagramFrame(boolean isLengthField, int length, byte[] dataConfig) {
+    public DatagramFrame(boolean isLengthField, long length, byte[] dataConfig) {
         this(isLengthField);
         this.lengthConfig = length;
         this.dataConfig = dataConfig;
+    }
+
+    public DatagramFrame(boolean isLengthField, int length, byte[] dataConfig) {
+        this(isLengthField, (long) length, dataConfig);
     }
 
     @Override
@@ -71,16 +75,20 @@ public class DatagramFrame extends QuicFrame {
         return new DatagramFrameParser(stream);
     }
 
-    public ModifiableInteger getLength() {
+    public ModifiableLong getLength() {
         return length;
     }
 
-    public void setLength(ModifiableInteger length) {
+    public void setLength(ModifiableLong length) {
         this.length = length;
     }
 
-    public void setLength(int length) {
+    public void setLength(long length) {
         this.length = ModifiableVariableFactory.safelySetValue(this.length, length);
+    }
+
+    public void setLength(int length) {
+        setLength((long) length);
     }
 
     public ModifiableByteArray getData() {
@@ -95,12 +103,16 @@ public class DatagramFrame extends QuicFrame {
         this.data = ModifiableVariableFactory.safelySetValue(this.data, data);
     }
 
-    public int getLengthConfig() {
+    public long getLengthConfig() {
         return lengthConfig;
     }
 
-    public void setLengthConfig(int lengthConfig) {
+    public void setLengthConfig(long lengthConfig) {
         this.lengthConfig = lengthConfig;
+    }
+
+    public void setLengthConfig(int lengthConfig) {
+        setLengthConfig((long) lengthConfig);
     }
 
     public byte[] getDataConfig() {

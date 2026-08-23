@@ -27,7 +27,7 @@ public class RetireConnectionIdFrameParser extends QuicFrameParser<RetireConnect
     }
 
     protected void parseSequenceNumber(RetireConnectionIdFrame frame) {
-        frame.setSequenceNumber((int) parseVariableLengthInteger());
+        frame.setSequenceNumber(parseVariableLengthInteger());
         LOGGER.debug("Sequence  Number: {}", frame.getSequenceNumber().getValue());
     }
 }

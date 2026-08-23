@@ -40,22 +40,22 @@ public class AckFrameParser extends QuicFrameParser<AckFrame> {
     }
 
     protected void parseLargestAcknowledged(AckFrame frame) {
-        frame.setLargestAcknowledged((int) parseVariableLengthInteger());
+        frame.setLargestAcknowledged(parseVariableLengthInteger());
         LOGGER.debug("Largest Acknowledged: {}", frame.getLargestAcknowledged().getValue());
     }
 
     protected void parseAckDelay(AckFrame frame) {
-        frame.setAckDelay((int) parseVariableLengthInteger());
+        frame.setAckDelay(parseVariableLengthInteger());
         LOGGER.debug("ACK Delay: {}", frame.getAckDelay().getValue());
     }
 
     protected void parseAckRangeCount(AckFrame frame) {
-        frame.setAckRangeCount((int) parseVariableLengthInteger());
+        frame.setAckRangeCount(parseVariableLengthInteger());
         LOGGER.debug("ACK Range Count: {}", frame.getAckRangeCount().getValue());
     }
 
     protected void parseFirstAckRange(AckFrame frame) {
-        frame.setFirstACKRange((int) parseVariableLengthInteger());
+        frame.setFirstACKRange(parseVariableLengthInteger());
         LOGGER.debug("First ACK Range: {}", frame.getFirstACKRange().getValue());
     }
 

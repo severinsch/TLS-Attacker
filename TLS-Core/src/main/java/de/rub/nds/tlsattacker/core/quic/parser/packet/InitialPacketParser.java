@@ -38,7 +38,7 @@ public class InitialPacketParser extends LongHeaderPacketParser<InitialPacket> {
     protected void parseTokenLength(InitialPacket packet) {
         try {
             int before = getStream().available();
-            int result = (int) parseVariableLengthInteger();
+            int result = checkedVarintLength(parseVariableLengthInteger(), "Initial Token Length");
             int after = getStream().available();
             packet.setTokenLength(result);
             packet.setTokenLengthSize(before - after);

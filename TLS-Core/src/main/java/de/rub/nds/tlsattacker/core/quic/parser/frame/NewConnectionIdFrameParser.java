@@ -31,12 +31,12 @@ public class NewConnectionIdFrameParser extends QuicFrameParser<NewConnectionIdF
     }
 
     protected void parseSequenceNumber(NewConnectionIdFrame frame) {
-        frame.setSequenceNumber((int) parseVariableLengthInteger());
+        frame.setSequenceNumber(parseVariableLengthInteger());
         LOGGER.debug("Sequence  Number: {}", frame.getSequenceNumber().getValue());
     }
 
     protected void parseRetirePriorTo(NewConnectionIdFrame frame) {
-        frame.setRetirePriorTo((int) parseVariableLengthInteger());
+        frame.setRetirePriorTo(parseVariableLengthInteger());
         LOGGER.debug("Retire Prior To: {}", frame.getRetirePriorTo().getValue());
     }
 

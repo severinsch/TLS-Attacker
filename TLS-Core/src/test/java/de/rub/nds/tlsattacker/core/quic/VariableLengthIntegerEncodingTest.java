@@ -134,4 +134,23 @@ public class VariableLengthIntegerEncodingTest {
                 EndOfStreamException.class,
                 () -> VariableLengthIntegerEncoding.readVariableLengthInteger(truncated));
     }
+
+    @Test
+    public void testEncodeVariableLengthIntegerRejectsNegativeValues() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> VariableLengthIntegerEncoding.encodeVariableLengthInteger(-1));
+    }
+
+    @Test
+    public void testDecodeVariableLengthIntegerRejectsTruncatedByteArrays() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> VariableLengthIntegerEncoding.decodeVariableLengthInteger(new byte[0]));
+        assertThrows(
+                IllegalArgumentException.class,
+                () ->
+                        VariableLengthIntegerEncoding.decodeVariableLengthInteger(
+                                new byte[] {(byte) 0x40}));
+    }
 }

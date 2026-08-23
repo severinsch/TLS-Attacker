@@ -27,7 +27,7 @@ public class MaxStreamsFrameParser extends QuicFrameParser<MaxStreamsFrame> {
     }
 
     protected void parseMaximumStreams(MaxStreamsFrame frame) {
-        frame.setMaximumStreams((int) parseVariableLengthInteger());
+        frame.setMaximumStreams(parseVariableLengthInteger());
         LOGGER.debug("Maximum Streams: {}", frame.getMaximumStreams().getValue());
     }
 }

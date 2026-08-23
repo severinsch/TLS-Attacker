@@ -23,6 +23,10 @@ public class VariableLengthIntegerEncoding {
      * @return byte array with the encoded value
      */
     public static byte[] encodeVariableLengthInteger(long value) {
+        if (value < 0) {
+            throw new IllegalArgumentException(
+                    "Value must not be negative for variable length integer: " + value);
+        }
         if (value > EncodingLength.SIXTY_TWO_BITS.maxValue) {
             throw new IllegalArgumentException(
                     "Value is too long to encode in variable length integer: " + value);
@@ -52,9 +56,19 @@ public class VariableLengthIntegerEncoding {
      * @return decoded integer as java long
      */
     public static long decodeVariableLengthInteger(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            throw new IllegalArgumentException("Variable length integer input must not be empty");
+        }
         long v = bytes[0];
         byte prefix = (byte) ((v & 0xff) >> 6);
         byte length = (byte) ((1 & 0xff) << prefix);
+        if (bytes.length < length) {
+            throw new IllegalArgumentException(
+                    "Variable length integer input is truncated: expected "
+                            + length
+                            + " bytes, got "
+                            + bytes.length);
+        }
         v = (byte) v & 0x3f;
         for (int i = 1; i < length; i++) {
             v = (v << 8) + (bytes[i] & 0xff);

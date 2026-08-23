@@ -8,6 +8,7 @@
  */
 package de.rub.nds.tlsattacker.core.quic.parser.frame;
 
+import de.rub.nds.protocol.exception.ParserException;
 import de.rub.nds.tlsattacker.core.layer.data.Parser;
 import de.rub.nds.tlsattacker.core.quic.frame.QuicFrame;
 import java.io.InputStream;
@@ -23,7 +24,22 @@ public abstract class QuicFrameParser<T extends QuicFrame> extends Parser<T> {
     }
 
     public void parseFrameType(QuicFrame frame) {
-        frame.setFrameType((byte) parseVariableLengthInteger());
+        frame.setFrameType(parseVariableLengthInteger());
         LOGGER.debug("Frame Type: {}", frame.getFrameType().getValue());
+    }
+
+    protected int checkedVarintLength(long value, String fieldName) {
+        if (value < 0 || value > Integer.MAX_VALUE) {
+            throw new ParserException(fieldName + " exceeds Java array limits: " + value);
+        }
+        if (value > getBytesLeft()) {
+            throw new ParserException(
+                    fieldName
+                            + " exceeds remaining QUIC frame bytes: "
+                            + value
+                            + " > "
+                            + getBytesLeft());
+        }
+        return (int) value;
     }
 }
