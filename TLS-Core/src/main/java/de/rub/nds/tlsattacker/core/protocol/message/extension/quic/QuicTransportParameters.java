@@ -259,6 +259,11 @@ public class QuicTransportParameters {
         return entryList;
     }
 
+    private static List<QuicTransportParameterEntry> entriesOrEmpty(
+            List<QuicTransportParameterEntry> entries) {
+        return entries == null ? List.of() : entries;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -274,6 +279,9 @@ public class QuicTransportParameters {
             return false;
         }
         if (!Objects.equals(maxUdpPayloadSize, that.maxUdpPayloadSize)) {
+            return false;
+        }
+        if (!Objects.equals(maxDatagramFrameSize, that.maxDatagramFrameSize)) {
             return false;
         }
         if (!Objects.equals(initialMaxData, that.initialMaxData)) {
@@ -315,7 +323,8 @@ public class QuicTransportParameters {
         if (!Arrays.equals(retrySourceConnectionId, that.retrySourceConnectionId)) {
             return false;
         }
-        if (extraEntries != null && !extraEntries.containsAll(that.extraEntries)) {
+        // null and empty both mean no extra entries
+        if (!entriesOrEmpty(extraEntries).equals(entriesOrEmpty(that.extraEntries))) {
             return false;
         }
         return Objects.equals(preferredAddress, that.preferredAddress);
@@ -326,27 +335,20 @@ public class QuicTransportParameters {
         int result = Arrays.hashCode(originalDestinationConnectionId);
         result = 31 * result + Arrays.hashCode(initialSourceConnectionId);
         result = 31 * result + Arrays.hashCode(retrySourceConnectionId);
-        result = 31 * result + (int) (maxIdleTimeout ^ (maxIdleTimeout >>> 32));
-        result = 31 * result + (int) (maxUdpPayloadSize ^ (maxUdpPayloadSize >>> 32));
-        result = 31 * result + (int) (initialMaxData ^ (initialMaxData >>> 32));
-        result =
-                31 * result
-                        + (int)
-                                (initialMaxStreamDataBidiLocal
-                                        ^ (initialMaxStreamDataBidiLocal >>> 32));
-        result =
-                31 * result
-                        + (int)
-                                (initialMaxStreamDataBidiRemote
-                                        ^ (initialMaxStreamDataBidiRemote >>> 32));
-        result = 31 * result + (int) (initialMaxStreamDataUni ^ (initialMaxStreamDataUni >>> 32));
-        result = 31 * result + (int) (initialMaxStreamsBidi ^ (initialMaxStreamsBidi >>> 32));
-        result = 31 * result + (int) (initialMaxStreamsUni ^ (initialMaxStreamsUni >>> 32));
-        result = 31 * result + (int) (ackDelayExponent ^ (ackDelayExponent >>> 32));
-        result = 31 * result + (int) (maxAckDelay ^ (maxAckDelay >>> 32));
-        result = 31 * result + (int) (activeConnectionIdLimit ^ (activeConnectionIdLimit >>> 32));
+        result = 31 * result + Objects.hashCode(maxIdleTimeout);
+        result = 31 * result + Objects.hashCode(maxUdpPayloadSize);
+        result = 31 * result + Objects.hashCode(maxDatagramFrameSize);
+        result = 31 * result + Objects.hashCode(initialMaxData);
+        result = 31 * result + Objects.hashCode(initialMaxStreamDataBidiLocal);
+        result = 31 * result + Objects.hashCode(initialMaxStreamDataBidiRemote);
+        result = 31 * result + Objects.hashCode(initialMaxStreamDataUni);
+        result = 31 * result + Objects.hashCode(initialMaxStreamsBidi);
+        result = 31 * result + Objects.hashCode(initialMaxStreamsUni);
+        result = 31 * result + Objects.hashCode(ackDelayExponent);
+        result = 31 * result + Objects.hashCode(maxAckDelay);
+        result = 31 * result + Objects.hashCode(activeConnectionIdLimit);
         result = 31 * result + (disableActiveMigration ? 1 : 0);
-        result = 31 * result + (extraEntries != null ? extraEntries.hashCode() : 0);
+        result = 31 * result + entriesOrEmpty(extraEntries).hashCode();
         result = 31 * result + (preferredAddress != null ? preferredAddress.hashCode() : 0);
         return result;
     }

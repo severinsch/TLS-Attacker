@@ -8,7 +8,9 @@
  */
 package de.rub.nds.tlsattacker.core.protocol.message.extension.quic;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import de.rub.nds.modifiablevariable.util.DataConverter;
 import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.constants.QuicTransportParameterEntryTypes;
@@ -79,5 +81,41 @@ public class QuicTransportParameterTest {
                 new QuicTransportParameters(quicTransportParameterList);
 
         assertEquals(quicTransportParameterList, quicTransportParameters.toListOfEntries());
+    }
+
+    @Test
+    public void testHashCodeToleratesUnsetParameters() {
+        assertDoesNotThrow(() -> new QuicTransportParameters().hashCode());
+        assertDoesNotThrow(() -> QuicTransportParameters.getDefaultParameters().hashCode());
+    }
+
+    @Test
+    public void testNullAndEmptyExtraEntriesAgreeOnEqualityAndHash() {
+        QuicTransportParameters withNull = QuicTransportParameters.getDefaultParameters();
+        QuicTransportParameters withEmpty = QuicTransportParameters.getDefaultParameters();
+        withEmpty.setExtraEntries(List.of());
+
+        assertEquals(withNull, withEmpty);
+        assertEquals(withNull.hashCode(), withEmpty.hashCode());
+    }
+
+    @Test
+    public void testAnExtraEntryOnOneSideOnlyIsNotEqual() {
+        QuicTransportParameters withExtra = QuicTransportParameters.getDefaultParameters();
+        withExtra.setExtraEntries(
+                List.of(
+                        new QuicTransportParameterEntry(
+                                QuicTransportParameterEntryTypes.UNKNOWN, new byte[] {1, 2})));
+
+        assertNotEquals(withExtra, QuicTransportParameters.getDefaultParameters());
+    }
+
+    @Test
+    public void testMaxDatagramFrameSizeIsCompared() {
+        QuicTransportParameters supportsDatagrams = QuicTransportParameters.getDefaultParameters();
+        QuicTransportParameters doesNot = QuicTransportParameters.getDefaultParameters();
+        doesNot.setMaxDatagramFrameSize(null);
+
+        assertNotEquals(supportsDatagrams, doesNot);
     }
 }
