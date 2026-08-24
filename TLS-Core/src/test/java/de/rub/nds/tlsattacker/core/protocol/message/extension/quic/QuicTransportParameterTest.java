@@ -9,6 +9,8 @@
 package de.rub.nds.tlsattacker.core.protocol.message.extension.quic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import de.rub.nds.modifiablevariable.util.DataConverter;
 import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.constants.QuicTransportParameterEntryTypes;
@@ -79,5 +81,48 @@ public class QuicTransportParameterTest {
                 new QuicTransportParameters(quicTransportParameterList);
 
         assertEquals(quicTransportParameterList, quicTransportParameters.toListOfEntries());
+    }
+
+    /**
+     * Every integer parameter is optional, and the defaults leave three of them unset, so hashing
+     * must not unbox. It used to throw, which made these objects unusable as hash keys.
+     */
+    @Test
+    public void testHashCodeToleratesUnsetParameters() {
+        assertNotNull(new QuicTransportParameters().hashCode());
+        assertNotNull(QuicTransportParameters.getDefaultParameters().hashCode());
+    }
+
+    /** Equal objects must hash equally: null and an empty extra-entry list mean the same thing. */
+    @Test
+    public void testNullAndEmptyExtraEntriesAgreeOnEqualityAndHash() {
+        QuicTransportParameters withNull = QuicTransportParameters.getDefaultParameters();
+        QuicTransportParameters withEmpty = QuicTransportParameters.getDefaultParameters();
+        withEmpty.setExtraEntries(List.of());
+
+        assertEquals(withNull, withEmpty);
+        assertEquals(withNull.hashCode(), withEmpty.hashCode());
+    }
+
+    /** An unmodelled parameter one side does not carry used to compare equal. */
+    @Test
+    public void testAnExtraEntryOnOneSideOnlyIsNotEqual() {
+        QuicTransportParameters withExtra = QuicTransportParameters.getDefaultParameters();
+        withExtra.setExtraEntries(
+                List.of(
+                        new QuicTransportParameterEntry(
+                                QuicTransportParameterEntryTypes.UNKNOWN, new byte[] {1, 2})));
+
+        assertNotEquals(withExtra, QuicTransportParameters.getDefaultParameters());
+    }
+
+    /** max_datagram_frame_size (RFC 9221) was hashed but never compared. */
+    @Test
+    public void testMaxDatagramFrameSizeIsCompared() {
+        QuicTransportParameters supportsDatagrams = QuicTransportParameters.getDefaultParameters();
+        QuicTransportParameters doesNot = QuicTransportParameters.getDefaultParameters();
+        doesNot.setMaxDatagramFrameSize(null);
+
+        assertNotEquals(supportsDatagrams, doesNot);
     }
 }
