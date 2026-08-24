@@ -10,6 +10,7 @@ package de.rub.nds.tlsattacker.core.protocol.preparator.extension.quic;
 
 import de.rub.nds.protocol.util.SilentByteArrayOutputStream;
 import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.QuicTransportParameterEntry;
+import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.QuicTransportParameters;
 import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.QuicTransportParametersExtensionMessage;
 import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.constants.QuicTransportParameterEntryTypes;
 import de.rub.nds.tlsattacker.core.protocol.preparator.extension.ExtensionPreparator;
@@ -39,8 +40,11 @@ public class QuicTransportParametersExtensionsPreparator
 
     @Override
     public void prepareExtensionContent() {
+        QuicTransportParameters configuredParameters =
+                chooser.getConfig().getDefaultQuicTransportParameters();
+        warnAboutServerOnlyParametersSentByAClient(configuredParameters);
         List<QuicTransportParameterEntry> quicTransportEntrys =
-                chooser.getConfig().getDefaultQuicTransportParameters().toListOfEntries();
+                configuredParameters.toListOfEntries();
         quicTransportEntrys = new ArrayList<>(quicTransportEntrys);
         quicTransportEntrys.add(
                 new QuicTransportParameterEntry(
@@ -63,5 +67,31 @@ public class QuicTransportParametersExtensionsPreparator
         }
         msg.setParameterExtensions(stream.toByteArray());
         msg.setParameterExtensionsLength(stream.toByteArray().length);
+    }
+
+    private void warnAboutServerOnlyParametersSentByAClient(QuicTransportParameters parameters) {
+        if (chooser.getContext().getTalkingConnectionEndType() != ConnectionEndType.CLIENT) {
+            return;
+        }
+        List<String> serverOnly = new ArrayList<>();
+        if (parameters.getOriginalDestinationConnectionId() != null) {
+            serverOnly.add("original_destination_connection_id");
+        }
+        if (parameters.getStatelessResetToken() != null) {
+            serverOnly.add("stateless_reset_token");
+        }
+        if (parameters.getPreferredAddress() != null) {
+            serverOnly.add("preferred_address");
+        }
+        if (parameters.getRetrySourceConnectionId() != null) {
+            serverOnly.add("retry_source_connection_id");
+        }
+        if (!serverOnly.isEmpty()) {
+            LOGGER.warn(
+                    "Sending server-only QUIC transport parameter(s) {} as the client. RFC 9000 "
+                            + "section 18.2 forbids this and a conformant server answers "
+                            + "TRANSPORT_PARAMETER_ERROR.",
+                    serverOnly);
+        }
     }
 }

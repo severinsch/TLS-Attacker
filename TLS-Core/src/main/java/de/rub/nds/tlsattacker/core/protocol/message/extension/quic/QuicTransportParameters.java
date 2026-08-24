@@ -25,6 +25,7 @@ import static de.rub.nds.tlsattacker.core.protocol.message.extension.quic.consta
 import static de.rub.nds.tlsattacker.core.protocol.message.extension.quic.constants.QuicTransportParameterEntryTypes.ORIGINAL_DESTINATION_CONNECTION_ID;
 import static de.rub.nds.tlsattacker.core.protocol.message.extension.quic.constants.QuicTransportParameterEntryTypes.PREFERRED_ADDRESS;
 import static de.rub.nds.tlsattacker.core.protocol.message.extension.quic.constants.QuicTransportParameterEntryTypes.RETRY_SOURCE_CONNECTION_ID;
+import static de.rub.nds.tlsattacker.core.protocol.message.extension.quic.constants.QuicTransportParameterEntryTypes.STATELESS_RESET_TOKEN;
 
 import de.rub.nds.tlsattacker.core.quic.util.VariableLengthIntegerEncoding;
 import java.io.IOException;
@@ -41,6 +42,12 @@ public class QuicTransportParameters {
     private byte[] initialSourceConnectionId;
 
     private byte[] retrySourceConnectionId;
+
+    /**
+     * The stateless_reset_token parameter (RFC 9000 section 18.2), unset by default. It is sent in
+     * either role when set, so a client can probe a server's section 18.2 check.
+     */
+    private byte[] statelessResetToken;
 
     private Long maxIdleTimeout;
     private Long maxUdpPayloadSize;
@@ -77,6 +84,9 @@ public class QuicTransportParameters {
                     break;
                 case RETRY_SOURCE_CONNECTION_ID:
                     this.retrySourceConnectionId = parameterEntry.getEntryValue().getValue();
+                    break;
+                case STATELESS_RESET_TOKEN:
+                    this.statelessResetToken = parameterEntry.getEntryValue().getValue();
                     break;
                 case MAX_IDLE_TIMEOUT:
                     this.maxIdleTimeout =
@@ -186,6 +196,11 @@ public class QuicTransportParameters {
             entryList.add(
                     new QuicTransportParameterEntry(
                             RETRY_SOURCE_CONNECTION_ID, this.retrySourceConnectionId));
+        }
+        if (this.statelessResetToken != null) {
+            entryList.add(
+                    new QuicTransportParameterEntry(
+                            STATELESS_RESET_TOKEN, this.statelessResetToken));
         }
         if (this.maxIdleTimeout != null) {
             entryList.add(new QuicTransportParameterEntry(MAX_IDLE_TIMEOUT, this.maxIdleTimeout));
@@ -323,6 +338,9 @@ public class QuicTransportParameters {
         if (!Arrays.equals(retrySourceConnectionId, that.retrySourceConnectionId)) {
             return false;
         }
+        if (!Arrays.equals(statelessResetToken, that.statelessResetToken)) {
+            return false;
+        }
         // null and empty both mean no extra entries
         if (!entriesOrEmpty(extraEntries).equals(entriesOrEmpty(that.extraEntries))) {
             return false;
@@ -335,6 +353,7 @@ public class QuicTransportParameters {
         int result = Arrays.hashCode(originalDestinationConnectionId);
         result = 31 * result + Arrays.hashCode(initialSourceConnectionId);
         result = 31 * result + Arrays.hashCode(retrySourceConnectionId);
+        result = 31 * result + Arrays.hashCode(statelessResetToken);
         result = 31 * result + Objects.hashCode(maxIdleTimeout);
         result = 31 * result + Objects.hashCode(maxUdpPayloadSize);
         result = 31 * result + Objects.hashCode(maxDatagramFrameSize);
@@ -375,6 +394,17 @@ public class QuicTransportParameters {
 
     public void setRetrySourceConnectionId(byte[] retrySourceConnectionId) {
         this.retrySourceConnectionId = retrySourceConnectionId;
+    }
+
+    public byte[] getStatelessResetToken() {
+        return statelessResetToken;
+    }
+
+    /**
+     * @param statelessResetToken the token, or null to send none; the length is not enforced
+     */
+    public void setStatelessResetToken(byte[] statelessResetToken) {
+        this.statelessResetToken = statelessResetToken;
     }
 
     public Long getMaxIdleTimeout() {
