@@ -25,6 +25,7 @@ import static de.rub.nds.tlsattacker.core.protocol.message.extension.quic.consta
 import static de.rub.nds.tlsattacker.core.protocol.message.extension.quic.constants.QuicTransportParameterEntryTypes.ORIGINAL_DESTINATION_CONNECTION_ID;
 import static de.rub.nds.tlsattacker.core.protocol.message.extension.quic.constants.QuicTransportParameterEntryTypes.PREFERRED_ADDRESS;
 import static de.rub.nds.tlsattacker.core.protocol.message.extension.quic.constants.QuicTransportParameterEntryTypes.RETRY_SOURCE_CONNECTION_ID;
+import static de.rub.nds.tlsattacker.core.protocol.message.extension.quic.constants.QuicTransportParameterEntryTypes.STATELESS_RESET_TOKEN;
 
 import de.rub.nds.tlsattacker.core.quic.util.VariableLengthIntegerEncoding;
 import java.io.IOException;
@@ -41,6 +42,23 @@ public class QuicTransportParameters {
     private byte[] initialSourceConnectionId;
 
     private byte[] retrySourceConnectionId;
+
+    /**
+     * The stateless reset token bound to the connection ID used during the handshake (RFC 9000,
+     * Section 18.2, parameter 0x02). Exactly 16 bytes.
+     *
+     * <p>Section 18.2: "This transport parameter MUST NOT be sent by a client but MAY be sent by a
+     * server." It is nevertheless emitted by {@link #toListOfEntries()} in whichever direction it
+     * is configured, because a value the user set explicitly is never dropped silently; a client
+     * that sets it is expected to be probing the peer's Section 18.2 check, and the peer is then
+     * required to answer TRANSPORT_PARAMETER_ERROR. {@link
+     * de.rub.nds.tlsattacker.core.protocol.preparator.extension.quic.QuicTransportParametersExtensionsPreparator}
+     * warns when that happens so it cannot go unnoticed.
+     *
+     * <p>Unset by default: a server that does not send this parameter simply cannot use stateless
+     * reset for the connection ID negotiated during the handshake (Section 10.3).
+     */
+    private byte[] statelessResetToken;
 
     private Long maxIdleTimeout;
     private Long maxUdpPayloadSize;
@@ -77,6 +95,9 @@ public class QuicTransportParameters {
                     break;
                 case RETRY_SOURCE_CONNECTION_ID:
                     this.retrySourceConnectionId = parameterEntry.getEntryValue().getValue();
+                    break;
+                case STATELESS_RESET_TOKEN:
+                    this.statelessResetToken = parameterEntry.getEntryValue().getValue();
                     break;
                 case MAX_IDLE_TIMEOUT:
                     this.maxIdleTimeout =
@@ -186,6 +207,11 @@ public class QuicTransportParameters {
             entryList.add(
                     new QuicTransportParameterEntry(
                             RETRY_SOURCE_CONNECTION_ID, this.retrySourceConnectionId));
+        }
+        if (this.statelessResetToken != null) {
+            entryList.add(
+                    new QuicTransportParameterEntry(
+                            STATELESS_RESET_TOKEN, this.statelessResetToken));
         }
         if (this.maxIdleTimeout != null) {
             entryList.add(new QuicTransportParameterEntry(MAX_IDLE_TIMEOUT, this.maxIdleTimeout));
@@ -326,6 +352,9 @@ public class QuicTransportParameters {
         if (!Arrays.equals(retrySourceConnectionId, that.retrySourceConnectionId)) {
             return false;
         }
+        if (!Arrays.equals(statelessResetToken, that.statelessResetToken)) {
+            return false;
+        }
         // Null and empty both mean "no unmodelled parameters", and the parsing
         // constructor produces the empty list where a hand-built instance leaves null.
         // The previous one-sided containsAll() also called a set with extra entries equal
@@ -347,6 +376,7 @@ public class QuicTransportParameters {
         int result = Arrays.hashCode(originalDestinationConnectionId);
         result = 31 * result + Arrays.hashCode(initialSourceConnectionId);
         result = 31 * result + Arrays.hashCode(retrySourceConnectionId);
+        result = 31 * result + Arrays.hashCode(statelessResetToken);
         result = 31 * result + Objects.hashCode(maxIdleTimeout);
         result = 31 * result + Objects.hashCode(maxUdpPayloadSize);
         result = 31 * result + Objects.hashCode(maxDatagramFrameSize);
@@ -387,6 +417,20 @@ public class QuicTransportParameters {
 
     public void setRetrySourceConnectionId(byte[] retrySourceConnectionId) {
         this.retrySourceConnectionId = retrySourceConnectionId;
+    }
+
+    public byte[] getStatelessResetToken() {
+        return statelessResetToken;
+    }
+
+    /**
+     * @param statelessResetToken the 16-byte token of RFC 9000, Section 18.2, or null to advertise
+     *     none. The length is not enforced here: Section 18.2 fixes it at 16 bytes and a peer must
+     *     answer any other length with TRANSPORT_PARAMETER_ERROR, which is a check worth being able
+     *     to exercise.
+     */
+    public void setStatelessResetToken(byte[] statelessResetToken) {
+        this.statelessResetToken = statelessResetToken;
     }
 
     public Long getMaxIdleTimeout() {

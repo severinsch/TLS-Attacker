@@ -10,6 +10,7 @@ package de.rub.nds.tlsattacker.core.protocol.preparator.extension.quic;
 
 import de.rub.nds.protocol.util.SilentByteArrayOutputStream;
 import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.QuicTransportParameterEntry;
+import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.QuicTransportParameters;
 import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.QuicTransportParametersExtensionMessage;
 import de.rub.nds.tlsattacker.core.protocol.message.extension.quic.constants.QuicTransportParameterEntryTypes;
 import de.rub.nds.tlsattacker.core.protocol.preparator.extension.ExtensionPreparator;
@@ -39,8 +40,11 @@ public class QuicTransportParametersExtensionsPreparator
 
     @Override
     public void prepareExtensionContent() {
+        QuicTransportParameters configuredParameters =
+                chooser.getConfig().getDefaultQuicTransportParameters();
+        warnAboutServerOnlyParametersSentByAClient(configuredParameters);
         List<QuicTransportParameterEntry> quicTransportEntrys =
-                chooser.getConfig().getDefaultQuicTransportParameters().toListOfEntries();
+                configuredParameters.toListOfEntries();
         quicTransportEntrys = new ArrayList<>(quicTransportEntrys);
         quicTransportEntrys.add(
                 new QuicTransportParameterEntry(
@@ -74,5 +78,40 @@ public class QuicTransportParametersExtensionsPreparator
         }
         msg.setParameterExtensions(stream.toByteArray());
         msg.setParameterExtensionsLength(stream.toByteArray().length);
+    }
+
+    /**
+     * RFC 9000, Section 18.2 makes four transport parameters server-only, and a server "MUST treat
+     * receipt of any of these transport parameters as a connection error of type
+     * TRANSPORT_PARAMETER_ERROR". Configuring one of them and then talking as the client is
+     * therefore a deliberate probe of that check, so the value is still sent — dropping what the
+     * user configured would make the probe silently untestable. It is loud, because the far more
+     * likely cause is a configuration copied from a server run, and the resulting handshake failure
+     * would otherwise look unexplained.
+     */
+    private void warnAboutServerOnlyParametersSentByAClient(QuicTransportParameters parameters) {
+        if (chooser.getContext().getTalkingConnectionEndType() != ConnectionEndType.CLIENT) {
+            return;
+        }
+        List<String> serverOnly = new ArrayList<>();
+        if (parameters.getOriginalDestinationConnectionId() != null) {
+            serverOnly.add("original_destination_connection_id");
+        }
+        if (parameters.getStatelessResetToken() != null) {
+            serverOnly.add("stateless_reset_token");
+        }
+        if (parameters.getPreferredAddress() != null) {
+            serverOnly.add("preferred_address");
+        }
+        if (parameters.getRetrySourceConnectionId() != null) {
+            serverOnly.add("retry_source_connection_id");
+        }
+        if (!serverOnly.isEmpty()) {
+            LOGGER.warn(
+                    "Sending server-only QUIC transport parameter(s) {} as the client. RFC 9000 "
+                            + "section 18.2 forbids this and a conformant server answers "
+                            + "TRANSPORT_PARAMETER_ERROR.",
+                    serverOnly);
+        }
     }
 }
