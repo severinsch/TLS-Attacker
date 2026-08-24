@@ -20,4 +20,7 @@ public class MiscRfcConstants {
     public static final int RETRY_TOKEN_INTEGRITY_TAG_LENGTH = 16;
 
     public static final int STATELESS_RESET_TOKEN_LENGTH = 16;
+
+    /** The Key Phase bit of a short header's first byte (RFC 9000 section 17.3.1). */
+    public static final int KEY_PHASE_BIT = 0x04;
 }

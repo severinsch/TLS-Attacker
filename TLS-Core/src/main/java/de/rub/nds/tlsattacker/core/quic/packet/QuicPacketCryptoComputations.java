@@ -19,6 +19,7 @@ import de.rub.nds.tlsattacker.core.quic.constants.QuicRetryConstants;
 import de.rub.nds.tlsattacker.core.quic.constants.QuicVersion;
 import de.rub.nds.tlsattacker.core.state.Context;
 import de.rub.nds.tlsattacker.core.state.quic.QuicContext;
+import de.rub.nds.tlsattacker.transport.ConnectionEndType;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.security.InvalidAlgorithmParameterException;
@@ -300,22 +301,8 @@ public class QuicPacketCryptoComputations extends ModifiableVariableHolder {
             throws NoSuchAlgorithmException, CryptoException {
         LOGGER.debug("Initialize Quic Application Secrets");
         QuicContext quicContext = context.getQuicContext();
-        int keyLength = 16;
-        switch (context.getTlsContext().getSelectedCipherSuite()) {
-            case TLS_AES_128_CCM_SHA256:
-            case TLS_AES_128_GCM_SHA256:
-                keyLength = 16;
-                break;
-            case TLS_AES_256_GCM_SHA384:
-            case TLS_CHACHA20_POLY1305_SHA256:
-                keyLength = 32;
-                break;
-            default:
-                LOGGER.warn(
-                        "Unsupported Cipher Suite: {}",
-                        context.getTlsContext().getSelectedCipherSuite());
-                break;
-        }
+        int keyLength =
+                resolveApplicationKeyLength(context.getTlsContext().getSelectedCipherSuite());
 
         HKDFAlgorithm hkdfAlgorithm = quicContext.getHkdfAlgorithm();
         QuicVersion version = quicContext.getQuicVersion();
@@ -359,6 +346,162 @@ public class QuicPacketCryptoComputations extends ModifiableVariableHolder {
                         keyLength));
 
         quicContext.setApplicationSecretsInitialized(true);
+    }
+
+    /**
+     * @param cipherSuite the negotiated cipher suite
+     * @return the 1-RTT packet protection key length in bytes
+     */
+    private static int resolveApplicationKeyLength(CipherSuite cipherSuite) {
+        switch (cipherSuite) {
+            case TLS_AES_128_CCM_SHA256:
+            case TLS_AES_128_GCM_SHA256:
+                return 16;
+            case TLS_AES_256_GCM_SHA384:
+            case TLS_CHACHA20_POLY1305_SHA256:
+                return 32;
+            default:
+                LOGGER.warn("Unsupported Cipher Suite: {}", cipherSuite);
+                return 16;
+        }
+    }
+
+    /**
+     * One generation of 1-RTT packet protection material. The header protection key is not part of
+     * it, as key updates do not change it (RFC 9001 section 6.1).
+     *
+     * @param secret the traffic secret of this generation
+     * @param key the packet protection key derived from it
+     * @param iv the packet protection IV derived from it
+     */
+    public record ApplicationKeyMaterial(byte[] secret, byte[] key, byte[] iv) {}
+
+    /**
+     * Derives the next generation of 1-RTT packet protection material for one connection end (RFC
+     * 9001 section 6.1) without changing the context, so a receiver can try it first (section 6.3).
+     *
+     * @param context the QUIC context holding the current generation
+     * @param endType the connection end whose packet protection keys are updated
+     * @return the next generation's secret, key and IV
+     * @throws CryptoException if the current secret is unknown or the derivation fails
+     * @throws NoSuchAlgorithmException if the negotiated HKDF algorithm is unavailable
+     */
+    public static ApplicationKeyMaterial calculateNextApplicationSecrets(
+            QuicContext context, ConnectionEndType endType)
+            throws CryptoException, NoSuchAlgorithmException {
+        byte[] currentSecret = context.getApplicationSecret(endType);
+        if (currentSecret == null) {
+            throw new CryptoException(
+                    "Cannot update the "
+                            + endType
+                            + " application secret before it has been calculated");
+        }
+        HKDFAlgorithm hkdfAlgorithm = context.getHkdfAlgorithm();
+        if (hkdfAlgorithm == null) {
+            throw new CryptoException(
+                    "Cannot update application secrets before the HKDF algorithm is known");
+        }
+        QuicVersion version = context.getQuicVersion();
+        Mac mac = Mac.getInstance(hkdfAlgorithm.getMacAlgorithm().getJavaName());
+
+        byte[] nextSecret =
+                HKDFunction.expandLabel(
+                        hkdfAlgorithm,
+                        currentSecret,
+                        version.getKeyUpdateLabel(),
+                        new byte[0],
+                        mac.getMacLength(),
+                        ProtocolVersion.TLS13);
+        int keyLength =
+                resolveApplicationKeyLength(
+                        context.getContext().getTlsContext().getSelectedCipherSuite());
+        return new ApplicationKeyMaterial(
+                nextSecret,
+                deriveKeyFromSecret(version, hkdfAlgorithm, nextSecret, keyLength),
+                deriveIvFromSecret(version, hkdfAlgorithm, nextSecret));
+    }
+
+    /**
+     * Initiates a key update (RFC 9001 section 6.1): updates the write and read keys and toggles
+     * the Key Phase bit. The old read keys are kept for delayed packets (section 6.5). The section
+     * 6.1 preconditions on when to initiate are not enforced.
+     *
+     * @param context the QUIC context to update
+     * @throws CryptoException if the current secrets are unknown or a derivation fails
+     * @throws NoSuchAlgorithmException if the negotiated HKDF algorithm is unavailable
+     */
+    public static void initiateKeyUpdate(QuicContext context)
+            throws CryptoException, NoSuchAlgorithmException {
+        ConnectionEndType writeEndType = context.getConnection().getLocalConnectionEndType();
+        ConnectionEndType readEndType = writeEndType.getPeer();
+
+        // Derive both before installing either, so a failure changes nothing.
+        ApplicationKeyMaterial nextWriteKeys =
+                calculateNextApplicationSecrets(context, writeEndType);
+        ApplicationKeyMaterial nextReadKeys = calculateNextApplicationSecrets(context, readEndType);
+
+        installNextApplicationKeys(context, writeEndType, nextWriteKeys, false);
+        installNextApplicationKeys(context, readEndType, nextReadKeys, true);
+        LOGGER.debug(
+                "Initiated QUIC key update, now writing with key phase {}",
+                context.getApplicationKeyPhase(writeEndType) & 1);
+    }
+
+    /**
+     * Completes a key update the peer initiated (RFC 9001 section 6.2). Call only after a packet
+     * was unprotected with {@code nextPeerKeys}. The send keys are advanced unless they already
+     * match.
+     *
+     * @param context the QUIC context to update
+     * @param peerEndType the connection end that protected the packet which carried the update
+     * @param nextPeerKeys the material that successfully unprotected that packet
+     * @throws CryptoException if the local secret is unknown or a derivation fails
+     * @throws NoSuchAlgorithmException if the negotiated HKDF algorithm is unavailable
+     */
+    public static void completePeerInitiatedKeyUpdate(
+            QuicContext context, ConnectionEndType peerEndType, ApplicationKeyMaterial nextPeerKeys)
+            throws CryptoException, NoSuchAlgorithmException {
+        ConnectionEndType localEndType = peerEndType.getPeer();
+        int newPeerKeyPhase = context.getApplicationKeyPhase(peerEndType) + 1;
+        ApplicationKeyMaterial nextLocalKeys =
+                (context.getApplicationKeyPhase(localEndType) & 1) != (newPeerKeyPhase & 1)
+                        ? calculateNextApplicationSecrets(context, localEndType)
+                        : null;
+
+        installNextApplicationKeys(context, peerEndType, nextPeerKeys, true);
+        if (nextLocalKeys != null) {
+            installNextApplicationKeys(context, localEndType, nextLocalKeys, false);
+        }
+        LOGGER.debug(
+                "Peer initiated a QUIC key update, now reading with key phase {} and writing with key phase {}",
+                context.getApplicationKeyPhase(peerEndType) & 1,
+                context.getApplicationKeyPhase(localEndType) & 1);
+    }
+
+    /**
+     * Installs one generation of 1-RTT packet protection material and advances that end's key
+     * phase.
+     *
+     * @param context the QUIC context to update
+     * @param endType the connection end whose keys are replaced
+     * @param nextKeys the material to install
+     * @param receiveDirection whether the replaced key and IV are retained (RFC 9001 section 6.5)
+     */
+    private static void installNextApplicationKeys(
+            QuicContext context,
+            ConnectionEndType endType,
+            ApplicationKeyMaterial nextKeys,
+            boolean receiveDirection) {
+        if (receiveDirection) {
+            context.setPreviousApplicationKey(endType, context.getApplicationKey(endType));
+            context.setPreviousApplicationIv(endType, context.getApplicationIv(endType));
+            // No packet of the new generation read yet (RFC 9001 section 6.5).
+            context.setLowestReceivedOneRTTPacketNumberInCurrentKeyPhase(Integer.MAX_VALUE);
+        }
+        context.setApplicationSecret(endType, nextKeys.secret());
+        context.setApplicationKey(endType, nextKeys.key());
+        context.setApplicationIv(endType, nextKeys.iv());
+        context.setApplicationKeyPhase(endType, context.getApplicationKeyPhase(endType) + 1);
     }
 
     /**

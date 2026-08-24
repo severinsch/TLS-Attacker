@@ -10,6 +10,7 @@ package de.rub.nds.tlsattacker.core.quic.crypto;
 
 import de.rub.nds.modifiablevariable.util.DataConverter;
 import de.rub.nds.protocol.exception.CryptoException;
+import de.rub.nds.tlsattacker.core.quic.constants.MiscRfcConstants;
 import de.rub.nds.tlsattacker.core.quic.constants.QuicPacketType;
 import de.rub.nds.tlsattacker.core.quic.packet.HandshakePacket;
 import de.rub.nds.tlsattacker.core.quic.packet.InitialPacket;
@@ -217,14 +218,91 @@ public class QuicDecryptor {
                 chooser.getQuicAeadCipher());
     }
 
+    /**
+     * Removes the packet protection of a 1-RTT packet with the key generation selected by the Key
+     * Phase bit and the packet number (RFC 9001 sections 6.2 and 6.5): the current generation, the
+     * previous one for a delayed packet, or the next one, which is committed only if the packet
+     * authenticates (sections 6.3 and 9.5). Requires header protection to be removed already.
+     *
+     * @param packet the packet to decrypt, with header protection already removed
+     * @throws CryptoException if the packet does not authenticate under the selected keys
+     */
     public void decryptOneRTTPacket(QuicPacket packet) throws CryptoException {
-        this.decrypt(
-                packet,
-                chooser.getQuicApplicationServerIv(),
-                chooser.getQuicApplicationServerKey(),
-                chooser.getQuicApplicationClientIv(),
-                chooser.getQuicApplicationClientKey(),
-                chooser.getQuicAeadCipher());
+        ConnectionEndType protectingEndType = resolveProtectingConnectionEnd();
+        if (protectingEndType == null) {
+            LOGGER.error("Unknown connectionEndType: {}", chooser.getTalkingConnectionEnd());
+            return;
+        }
+        byte[] currentIv;
+        byte[] currentKey;
+        if (protectingEndType == ConnectionEndType.SERVER) {
+            currentIv = chooser.getQuicApplicationServerIv();
+            currentKey = chooser.getQuicApplicationServerKey();
+        } else {
+            currentIv = chooser.getQuicApplicationClientIv();
+            currentKey = chooser.getQuicApplicationClientKey();
+        }
+        String cipherAlgorithm = chooser.getQuicAeadCipher();
+
+        int receivedKeyPhase =
+                (packet.getUnprotectedFlags().getValue() & MiscRfcConstants.KEY_PHASE_BIT) == 0
+                        ? 0
+                        : 1;
+        int currentKeyPhase = quicContext.getApplicationKeyPhase(protectingEndType) & 1;
+
+        if (receivedKeyPhase == currentKeyPhase) {
+            decryptWith(packet, currentIv, currentKey, cipherAlgorithm);
+            noteCurrentKeyPhasePacketNumber(packet);
+            return;
+        }
+
+        byte[] previousIv = quicContext.getPreviousApplicationIv(protectingEndType);
+        byte[] previousKey = quicContext.getPreviousApplicationKey(protectingEndType);
+        if (previousIv != null
+                && previousKey != null
+                && packet.getPlainPacketNumber()
+                        < quicContext.getLowestReceivedOneRTTPacketNumberInCurrentKeyPhase()) {
+            LOGGER.debug(
+                    "1-RTT packet {} carries the previous key phase, decrypting it with the retained keys",
+                    packet.getPlainPacketNumber());
+            decryptWith(packet, previousIv, previousKey, cipherAlgorithm);
+            return;
+        }
+
+        QuicPacketCryptoComputations.ApplicationKeyMaterial nextKeys;
+        try {
+            nextKeys =
+                    QuicPacketCryptoComputations.calculateNextApplicationSecrets(
+                            quicContext, protectingEndType);
+        } catch (CryptoException | NoSuchAlgorithmException unavailable) {
+            // Without the peer's secret there is no next generation; use the current keys.
+            LOGGER.debug(
+                    "Cannot derive the next application secrets, decrypting with the current ones",
+                    unavailable);
+            decryptWith(packet, currentIv, currentKey, cipherAlgorithm);
+            return;
+        }
+
+        decryptWith(packet, nextKeys.iv(), nextKeys.key(), cipherAlgorithm);
+        try {
+            QuicPacketCryptoComputations.completePeerInitiatedKeyUpdate(
+                    quicContext, protectingEndType, nextKeys);
+        } catch (NoSuchAlgorithmException e) {
+            throw new CryptoException("Could not update the send keys after a key update", e);
+        }
+        noteCurrentKeyPhasePacketNumber(packet);
+    }
+
+    /**
+     * Records the packet number for the previous/next generation check of RFC 9001 section 6.5.
+     *
+     * @param packet a packet just unprotected with the current generation's keys
+     */
+    private void noteCurrentKeyPhasePacketNumber(QuicPacket packet) {
+        int packetNumber = packet.getPlainPacketNumber();
+        if (packetNumber < quicContext.getLowestReceivedOneRTTPacketNumberInCurrentKeyPhase()) {
+            quicContext.setLowestReceivedOneRTTPacketNumberInCurrentKeyPhase(packetNumber);
+        }
     }
 
     public void decryptZeroRTTPacket(QuicPacket packet) throws CryptoException {
@@ -237,6 +315,22 @@ public class QuicDecryptor {
                 chooser.getQuicZeroRTTAeadCipher());
     }
 
+    /**
+     * @return the connection end whose keys protect the packets being read, or null if unknown
+     */
+    private ConnectionEndType resolveProtectingConnectionEnd() {
+        ConnectionEndType connectionEndType = chooser.getTalkingConnectionEnd();
+        if (connectionEndType == null) {
+            return null;
+        }
+        // when attempting to read echoed ClientHello messages we have to use our keys for static
+        // decryption
+        if (chooser.getConfig().isEchoQuic()) {
+            connectionEndType = connectionEndType.getPeer();
+        }
+        return connectionEndType;
+    }
+
     private void decrypt(
             QuicPacket packet,
             byte[] serverIv,
@@ -245,30 +339,35 @@ public class QuicDecryptor {
             byte[] clientKey,
             String cipherAlgorithm)
             throws CryptoException {
-        ConnectionEndType connectionEndType = chooser.getTalkingConnectionEnd();
+        ConnectionEndType connectionEndType = resolveProtectingConnectionEnd();
         byte[] decryptionIv;
         byte[] decryptionKey;
 
-        // when attempting to read echoed ClientHello messages we have to use our keys for static
-        // decryption
-        if (chooser.getConfig().isEchoQuic()) {
-            connectionEndType = connectionEndType.getPeer();
+        if (connectionEndType == ConnectionEndType.SERVER) {
+            decryptionIv = serverIv;
+            decryptionKey = serverKey;
+        } else if (connectionEndType == ConnectionEndType.CLIENT) {
+            decryptionIv = clientIv;
+            decryptionKey = clientKey;
+        } else {
+            LOGGER.error("Unknown connectionEndType: {}", connectionEndType);
+            return;
         }
+        decryptWith(packet, decryptionIv, decryptionKey, cipherAlgorithm);
+    }
 
-        switch (connectionEndType) {
-            case SERVER:
-                decryptionIv = serverIv;
-                decryptionKey = serverKey;
-                break;
-            case CLIENT:
-                decryptionIv = clientIv;
-                decryptionKey = clientKey;
-                break;
-            default:
-                LOGGER.error("Unknown connectionEndType: {}", connectionEndType);
-                return;
-        }
-
+    /**
+     * Removes the packet protection of a packet with the given key and IV.
+     *
+     * @param packet the packet to decrypt
+     * @param decryptionIv the packet protection IV
+     * @param decryptionKey the packet protection key
+     * @param cipherAlgorithm the AEAD algorithm
+     * @throws CryptoException if the packet does not authenticate under this material
+     */
+    private void decryptWith(
+            QuicPacket packet, byte[] decryptionIv, byte[] decryptionKey, String cipherAlgorithm)
+            throws CryptoException {
         byte[] encryptedPayload =
                 new byte
                         [packet.getPacketLength().getValue()

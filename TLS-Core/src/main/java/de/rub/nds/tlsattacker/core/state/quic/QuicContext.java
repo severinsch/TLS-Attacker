@@ -105,6 +105,22 @@ public class QuicContext extends LayerContext {
     private byte[] applicationClientHeaderProtectionKey;
     private byte[] applicationServerHeaderProtectionKey;
 
+    // 1-RTT key update state (RFC 9001 section 6)
+    private int applicationClientKeyPhase;
+    private int applicationServerKeyPhase;
+
+    private byte[] previousApplicationClientKey;
+    private byte[] previousApplicationServerKey;
+
+    private byte[] previousApplicationClientIv;
+    private byte[] previousApplicationServerIv;
+
+    /**
+     * The lowest 1-RTT packet number read in the current key phase, or {@link Integer#MAX_VALUE} if
+     * none; tells the previous from the next generation (RFC 9001 section 6.5).
+     */
+    private int lowestReceivedOneRTTPacketNumberInCurrentKeyPhase = Integer.MAX_VALUE;
+
     // 0-RTT Keys
     private boolean zeroRTTSecretsInitialized;
     private byte[] zeroRTTClientSecret;
@@ -210,6 +226,14 @@ public class QuicContext extends LayerContext {
         this.applicationClientHeaderProtectionKey = null;
         this.applicationServerHeaderProtectionKey = null;
         this.applicationSecretsInitialized = false;
+
+        this.applicationClientKeyPhase = 0;
+        this.applicationServerKeyPhase = 0;
+        this.previousApplicationClientKey = null;
+        this.previousApplicationServerKey = null;
+        this.previousApplicationClientIv = null;
+        this.previousApplicationServerIv = null;
+        this.lowestReceivedOneRTTPacketNumberInCurrentKeyPhase = Integer.MAX_VALUE;
 
         this.zeroRTTClientSecret = null;
         this.zeroRTTServerSecret = null;
@@ -605,6 +629,111 @@ public class QuicContext extends LayerContext {
     public void setApplicationServerHeaderProtectionKey(
             byte[] applicationServerHeaderProtectionKey) {
         this.applicationServerHeaderProtectionKey = applicationServerHeaderProtectionKey;
+    }
+
+    // 1-RTT packet protection material by connection end, for the key update code
+
+    public byte[] getApplicationSecret(ConnectionEndType endType) {
+        return endType == ConnectionEndType.CLIENT
+                ? applicationClientSecret
+                : applicationServerSecret;
+    }
+
+    public void setApplicationSecret(ConnectionEndType endType, byte[] applicationSecret) {
+        if (endType == ConnectionEndType.CLIENT) {
+            this.applicationClientSecret = applicationSecret;
+        } else {
+            this.applicationServerSecret = applicationSecret;
+        }
+    }
+
+    public byte[] getApplicationKey(ConnectionEndType endType) {
+        return endType == ConnectionEndType.CLIENT ? applicationClientKey : applicationServerKey;
+    }
+
+    public void setApplicationKey(ConnectionEndType endType, byte[] applicationKey) {
+        if (endType == ConnectionEndType.CLIENT) {
+            this.applicationClientKey = applicationKey;
+        } else {
+            this.applicationServerKey = applicationKey;
+        }
+    }
+
+    public byte[] getApplicationIv(ConnectionEndType endType) {
+        return endType == ConnectionEndType.CLIENT ? applicationClientIv : applicationServerIv;
+    }
+
+    public void setApplicationIv(ConnectionEndType endType, byte[] applicationIv) {
+        if (endType == ConnectionEndType.CLIENT) {
+            this.applicationClientIv = applicationIv;
+        } else {
+            this.applicationServerIv = applicationIv;
+        }
+    }
+
+    /**
+     * The key generation the given end protects its 1-RTT packets with; the Key Phase bit is its
+     * low bit. Counted rather than toggled so the previous, current and next generations can be
+     * told apart.
+     *
+     * @param endType the connection end whose packet protection keys are meant
+     * @return the number of key updates that end has performed
+     */
+    public int getApplicationKeyPhase(ConnectionEndType endType) {
+        return endType == ConnectionEndType.CLIENT
+                ? applicationClientKeyPhase
+                : applicationServerKeyPhase;
+    }
+
+    public void setApplicationKeyPhase(ConnectionEndType endType, int applicationKeyPhase) {
+        if (endType == ConnectionEndType.CLIENT) {
+            this.applicationClientKeyPhase = applicationKeyPhase;
+        } else {
+            this.applicationServerKeyPhase = applicationKeyPhase;
+        }
+    }
+
+    /**
+     * The previous generation's 1-RTT packet protection key, or null before the first key update.
+     *
+     * @param endType the connection end whose packet protection keys are meant
+     * @return the previous generation's key, or null
+     */
+    public byte[] getPreviousApplicationKey(ConnectionEndType endType) {
+        return endType == ConnectionEndType.CLIENT
+                ? previousApplicationClientKey
+                : previousApplicationServerKey;
+    }
+
+    public void setPreviousApplicationKey(
+            ConnectionEndType endType, byte[] previousApplicationKey) {
+        if (endType == ConnectionEndType.CLIENT) {
+            this.previousApplicationClientKey = previousApplicationKey;
+        } else {
+            this.previousApplicationServerKey = previousApplicationKey;
+        }
+    }
+
+    public byte[] getPreviousApplicationIv(ConnectionEndType endType) {
+        return endType == ConnectionEndType.CLIENT
+                ? previousApplicationClientIv
+                : previousApplicationServerIv;
+    }
+
+    public void setPreviousApplicationIv(ConnectionEndType endType, byte[] previousApplicationIv) {
+        if (endType == ConnectionEndType.CLIENT) {
+            this.previousApplicationClientIv = previousApplicationIv;
+        } else {
+            this.previousApplicationServerIv = previousApplicationIv;
+        }
+    }
+
+    public int getLowestReceivedOneRTTPacketNumberInCurrentKeyPhase() {
+        return lowestReceivedOneRTTPacketNumberInCurrentKeyPhase;
+    }
+
+    public void setLowestReceivedOneRTTPacketNumberInCurrentKeyPhase(int packetNumber) {
+        this.lowestReceivedOneRTTPacketNumberInCurrentKeyPhase = packetNumber;
     }
 
     public boolean isZeroRTTSecretsInitialized() {
