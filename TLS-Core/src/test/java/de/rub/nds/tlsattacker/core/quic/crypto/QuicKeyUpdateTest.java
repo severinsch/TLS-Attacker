@@ -11,6 +11,7 @@ package de.rub.nds.tlsattacker.core.quic.crypto;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -437,5 +438,53 @@ public class QuicKeyUpdateTest {
                 GOLDEN_SERVER_HP,
                 DataConverter.bytesToRawHexString(
                         quicContext.getApplicationServerHeaderProtectionKey()));
+    }
+
+    /**
+     * Re-deriving the generation-0 application secrets must also reset the key update state.
+     *
+     * <p>Regression test for a defect found in review: {@code calculateApplicationSecrets} wrote
+     * generation-0 key material back into the context while leaving the key phase counters at
+     * whatever generation a previous update had reached. The result is a context that sets the Key
+     * Phase bit on packets protected with the OLD key, and decrypts the peer's genuine new-phase
+     * packets with it - the connection dies in both directions and looks exactly like the peer
+     * going silent. Reachable because {@code FinishedHandler} re-derives on a retransmitted
+     * Finished flight.
+     */
+    @Test
+    public void testRederivingApplicationSecretsResetsTheKeyUpdateState() throws Exception {
+        Context client = endpoint(ConnectionEndType.CLIENT);
+        QuicContext clientQuic = client.getQuicContext();
+
+        QuicPacketCryptoComputations.initiateKeyUpdate(clientQuic);
+        assertEquals(1, clientQuic.getApplicationKeyPhase(ConnectionEndType.CLIENT));
+        assertEquals(1, clientQuic.getApplicationKeyPhase(ConnectionEndType.SERVER));
+        // Previous keys are retained on the READ direction only (RFC 9001 section 6.5), and this
+        // endpoint is the client, so it is the SERVER material that has a previous generation.
+        assertNotNull(clientQuic.getPreviousApplicationKey(ConnectionEndType.SERVER));
+
+        QuicPacketCryptoComputations.calculateApplicationSecrets(client);
+
+        assertEquals(
+                0,
+                clientQuic.getApplicationKeyPhase(ConnectionEndType.CLIENT),
+                "generation-0 keys were installed, so the client phase must say generation 0");
+        assertEquals(
+                0,
+                clientQuic.getApplicationKeyPhase(ConnectionEndType.SERVER),
+                "generation-0 keys were installed, so the server phase must say generation 0");
+        assertNull(
+                clientQuic.getPreviousApplicationKey(ConnectionEndType.CLIENT),
+                "there is no previous generation once generation 0 is reinstalled");
+        assertNull(
+                clientQuic.getPreviousApplicationIv(ConnectionEndType.CLIENT),
+                "there is no previous generation once generation 0 is reinstalled");
+        assertNull(
+                clientQuic.getPreviousApplicationKey(ConnectionEndType.SERVER),
+                "there is no previous generation once generation 0 is reinstalled");
+        assertEquals(
+                Integer.MAX_VALUE,
+                clientQuic.getLowestReceivedOneRTTPacketNumberInCurrentKeyPhase(),
+                "the phase boundary must not survive a re-derivation");
     }
 }

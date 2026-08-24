@@ -296,6 +296,19 @@ public class QuicPacketCryptoComputations extends ModifiableVariableHolder {
     /**
      * Calculates all application client and server secrets including key, IV, and the key for
      * header protection.
+     *
+     * <p>This installs <b>generation 0</b> material, so it also resets the RFC 9001 section 6 key
+     * update state. That reset is not bookkeeping: the key phase counters exist to say which
+     * generation the key fields currently hold, and this method is the one writer besides {@link
+     * #installNextApplicationKeys} that replaces those fields. Leaving the counters alone here
+     * would leave a context whose phase says "generation 1" over generation-0 keys, which breaks
+     * the connection in both directions at once - we would set the Key Phase bit on packets
+     * protected with the old key, and we would decrypt the peer's genuine new-generation packets
+     * with it. Neither end can recover, and to an observer it is indistinguishable from the peer
+     * falling silent.
+     *
+     * <p>Reachable because {@code FinishedHandler} calls this whenever a Finished message is
+     * processed, which a retransmitted flight can do after the application keys already exist.
      */
     public static void calculateApplicationSecrets(Context context)
             throws NoSuchAlgorithmException, CryptoException {
@@ -344,6 +357,16 @@ public class QuicPacketCryptoComputations extends ModifiableVariableHolder {
                         hkdfAlgorithm,
                         quicContext.getApplicationServerSecret(),
                         keyLength));
+
+        // Generation 0 is now installed, so the key update state must describe generation 0
+        // too. See this method's javadoc for why a stale counter is not a cosmetic defect.
+        quicContext.setApplicationKeyPhase(ConnectionEndType.CLIENT, 0);
+        quicContext.setApplicationKeyPhase(ConnectionEndType.SERVER, 0);
+        quicContext.setPreviousApplicationKey(ConnectionEndType.CLIENT, null);
+        quicContext.setPreviousApplicationIv(ConnectionEndType.CLIENT, null);
+        quicContext.setPreviousApplicationKey(ConnectionEndType.SERVER, null);
+        quicContext.setPreviousApplicationIv(ConnectionEndType.SERVER, null);
+        quicContext.setLowestReceivedOneRTTPacketNumberInCurrentKeyPhase(Integer.MAX_VALUE);
 
         quicContext.setApplicationSecretsInitialized(true);
     }
