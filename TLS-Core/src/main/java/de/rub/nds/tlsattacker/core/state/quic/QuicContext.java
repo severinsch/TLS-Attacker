@@ -122,6 +122,27 @@ public class QuicContext extends LayerContext {
     private byte[] applicationClientHeaderProtectionKey;
     private byte[] applicationServerHeaderProtectionKey;
 
+    // Application Key Update state (RFC 9001 section 6). Only the application (1-RTT) keys are
+    // ever updated: "Keys of packets other than the 1-RTT packets are never updated; their keys
+    // are derived solely from the TLS handshake state" (RFC 9001 section 6.1).
+    private int applicationClientKeyPhase;
+    private int applicationServerKeyPhase;
+
+    private byte[] previousApplicationClientKey;
+    private byte[] previousApplicationServerKey;
+
+    private byte[] previousApplicationClientIv;
+    private byte[] previousApplicationServerIv;
+
+    /**
+     * The lowest 1-RTT packet number this endpoint has unprotected with the key phase it currently
+     * reads with, or {@link Integer#MAX_VALUE} while it has unprotected none. RFC 9001 section 6.5
+     * distinguishes the previous from the next key phase by packet number, because both carry the
+     * same Key Phase bit: "A recovered packet number that is lower than any packet number from the
+     * current key phase uses the previous packet protection keys".
+     */
+    private int lowestReceivedOneRTTPacketNumberInCurrentKeyPhase = Integer.MAX_VALUE;
+
     // 0-RTT Keys
     private boolean zeroRTTSecretsInitialized;
     private byte[] zeroRTTClientSecret;
@@ -229,6 +250,14 @@ public class QuicContext extends LayerContext {
         this.applicationClientHeaderProtectionKey = null;
         this.applicationServerHeaderProtectionKey = null;
         this.applicationSecretsInitialized = false;
+
+        this.applicationClientKeyPhase = 0;
+        this.applicationServerKeyPhase = 0;
+        this.previousApplicationClientKey = null;
+        this.previousApplicationServerKey = null;
+        this.previousApplicationClientIv = null;
+        this.previousApplicationServerIv = null;
+        this.lowestReceivedOneRTTPacketNumberInCurrentKeyPhase = Integer.MAX_VALUE;
 
         this.zeroRTTClientSecret = null;
         this.zeroRTTServerSecret = null;
@@ -646,6 +675,120 @@ public class QuicContext extends LayerContext {
     public void setApplicationServerHeaderProtectionKey(
             byte[] applicationServerHeaderProtectionKey) {
         this.applicationServerHeaderProtectionKey = applicationServerHeaderProtectionKey;
+    }
+
+    // Application (1-RTT) packet protection material addressed by the connection end that protects
+    // packets with it. RFC 9001 section 6 replaces this material on every key update, so the code
+    // implementing key updates has to reach it without knowing which role this endpoint plays.
+
+    public byte[] getApplicationSecret(ConnectionEndType endType) {
+        return endType == ConnectionEndType.CLIENT
+                ? applicationClientSecret
+                : applicationServerSecret;
+    }
+
+    public void setApplicationSecret(ConnectionEndType endType, byte[] applicationSecret) {
+        if (endType == ConnectionEndType.CLIENT) {
+            this.applicationClientSecret = applicationSecret;
+        } else {
+            this.applicationServerSecret = applicationSecret;
+        }
+    }
+
+    public byte[] getApplicationKey(ConnectionEndType endType) {
+        return endType == ConnectionEndType.CLIENT ? applicationClientKey : applicationServerKey;
+    }
+
+    public void setApplicationKey(ConnectionEndType endType, byte[] applicationKey) {
+        if (endType == ConnectionEndType.CLIENT) {
+            this.applicationClientKey = applicationKey;
+        } else {
+            this.applicationServerKey = applicationKey;
+        }
+    }
+
+    public byte[] getApplicationIv(ConnectionEndType endType) {
+        return endType == ConnectionEndType.CLIENT ? applicationClientIv : applicationServerIv;
+    }
+
+    public void setApplicationIv(ConnectionEndType endType, byte[] applicationIv) {
+        if (endType == ConnectionEndType.CLIENT) {
+            this.applicationClientIv = applicationIv;
+        } else {
+            this.applicationServerIv = applicationIv;
+        }
+    }
+
+    /**
+     * The key phase generation the given connection end protects its 1-RTT packets with. Generation
+     * 0 is the first set of 1-RTT keys; the Key Phase bit on the wire is the low bit of this
+     * counter, which RFC 9001 section 6 describes as "initially set to 0 for the first set of 1-RTT
+     * packets and toggled to signal each subsequent key update". The generation is counted rather
+     * than only toggled because sections 6.3 and 6.5 have to tell the previous, the current and the
+     * next generation apart, which the single bit cannot do.
+     *
+     * @param endType the connection end whose packet protection keys are meant
+     * @return the number of key updates that end has performed
+     */
+    public int getApplicationKeyPhase(ConnectionEndType endType) {
+        return endType == ConnectionEndType.CLIENT
+                ? applicationClientKeyPhase
+                : applicationServerKeyPhase;
+    }
+
+    public void setApplicationKeyPhase(ConnectionEndType endType, int applicationKeyPhase) {
+        if (endType == ConnectionEndType.CLIENT) {
+            this.applicationClientKeyPhase = applicationKeyPhase;
+        } else {
+            this.applicationServerKeyPhase = applicationKeyPhase;
+        }
+    }
+
+    /**
+     * The 1-RTT packet protection key of the generation preceding {@link
+     * #getApplicationKeyPhase(ConnectionEndType)}, or null while that end has never updated its
+     * keys. RFC 9001 section 6.1 requires an endpoint to retain the old keys until it has
+     * successfully unprotected a packet sent with the new ones, and section 6.5 uses them for
+     * packets the network delayed across a key update.
+     *
+     * @param endType the connection end whose packet protection keys are meant
+     * @return the previous generation's key, or null
+     */
+    public byte[] getPreviousApplicationKey(ConnectionEndType endType) {
+        return endType == ConnectionEndType.CLIENT
+                ? previousApplicationClientKey
+                : previousApplicationServerKey;
+    }
+
+    public void setPreviousApplicationKey(
+            ConnectionEndType endType, byte[] previousApplicationKey) {
+        if (endType == ConnectionEndType.CLIENT) {
+            this.previousApplicationClientKey = previousApplicationKey;
+        } else {
+            this.previousApplicationServerKey = previousApplicationKey;
+        }
+    }
+
+    public byte[] getPreviousApplicationIv(ConnectionEndType endType) {
+        return endType == ConnectionEndType.CLIENT
+                ? previousApplicationClientIv
+                : previousApplicationServerIv;
+    }
+
+    public void setPreviousApplicationIv(ConnectionEndType endType, byte[] previousApplicationIv) {
+        if (endType == ConnectionEndType.CLIENT) {
+            this.previousApplicationClientIv = previousApplicationIv;
+        } else {
+            this.previousApplicationServerIv = previousApplicationIv;
+        }
+    }
+
+    public int getLowestReceivedOneRTTPacketNumberInCurrentKeyPhase() {
+        return lowestReceivedOneRTTPacketNumberInCurrentKeyPhase;
+    }
+
+    public void setLowestReceivedOneRTTPacketNumberInCurrentKeyPhase(int packetNumber) {
+        this.lowestReceivedOneRTTPacketNumberInCurrentKeyPhase = packetNumber;
     }
 
     public boolean isZeroRTTSecretsInitialized() {

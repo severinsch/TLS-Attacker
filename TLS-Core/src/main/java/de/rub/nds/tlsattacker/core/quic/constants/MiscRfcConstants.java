@@ -22,6 +22,13 @@ public class MiscRfcConstants {
      */
     public static final int MAX_CONNECTION_ID_LENGTH = 20;
 
+    /**
+     * The Key Phase bit of a short header's first byte (RFC 9000 section 17.3.1). It indicates
+     * which generation of 1-RTT packet protection keys protects the packet: RFC 9001 section 6 sets
+     * it to 0 for the first set of 1-RTT keys and toggles it on every key update.
+     */
+    public static final int KEY_PHASE_BIT = 0x04;
+
     // TODO: actually rfc constant?
     public static final int AUTH_TAG_LENGTH = 16;
 

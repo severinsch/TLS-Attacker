@@ -10,6 +10,7 @@ package de.rub.nds.tlsattacker.core.quic.crypto;
 
 import de.rub.nds.modifiablevariable.util.DataConverter;
 import de.rub.nds.protocol.exception.CryptoException;
+import de.rub.nds.tlsattacker.core.quic.constants.MiscRfcConstants;
 import de.rub.nds.tlsattacker.core.quic.constants.QuicPacketType;
 import de.rub.nds.tlsattacker.core.quic.packet.HandshakePacket;
 import de.rub.nds.tlsattacker.core.quic.packet.InitialPacket;
@@ -217,14 +218,115 @@ public class QuicDecryptor {
                 chooser.getQuicAeadCipher());
     }
 
+    /**
+     * Removes the packet protection of a 1-RTT packet, selecting the key generation the Key Phase
+     * bit and the packet number point at (RFC 9001 sections 6.2 and 6.5).
+     *
+     * <p>The Key Phase bit is protected (RFC 9001 section 5.4.1 lists it among the bits header
+     * protection covers), so this can only run after {@link #removeHeaderProtectionOneRTT}, which
+     * also recovers the full packet number this method needs.
+     *
+     * <p>Three cases, in the order the RFC resolves them:
+     *
+     * <ol>
+     *   <li>The bit matches the generation currently read with: the normal case, and the only one
+     *       that occurs while neither endpoint ever updates its keys.
+     *   <li>The bit differs and the packet number is lower than any unprotected so far in the
+     *       current generation: RFC 9001 section 6.5, "A recovered packet number that is lower than
+     *       any packet number from the current key phase uses the previous packet protection keys".
+     *       Packets the network delayed across a key update land here.
+     *   <li>The bit differs otherwise: an apparent peer-initiated key update. The next generation
+     *       is derived and tried, and the update is committed only if the packet authenticates
+     *       under it (RFC 9001 section 6.2). A packet that does not authenticate leaves every key
+     *       and every key phase untouched, which is what stops a forged Key Phase bit from being a
+     *       denial of service against this endpoint (sections 6.3 and 9.5).
+     * </ol>
+     *
+     * @param packet the packet to decrypt, with header protection already removed
+     * @throws CryptoException if the packet does not authenticate under the selected keys
+     */
     public void decryptOneRTTPacket(QuicPacket packet) throws CryptoException {
-        this.decrypt(
-                packet,
-                chooser.getQuicApplicationServerIv(),
-                chooser.getQuicApplicationServerKey(),
-                chooser.getQuicApplicationClientIv(),
-                chooser.getQuicApplicationClientKey(),
-                chooser.getQuicAeadCipher());
+        ConnectionEndType protectingEndType = resolveProtectingConnectionEnd();
+        if (protectingEndType == null) {
+            LOGGER.error("Unknown connectionEndType: {}", chooser.getTalkingConnectionEnd());
+            return;
+        }
+        byte[] currentIv;
+        byte[] currentKey;
+        if (protectingEndType == ConnectionEndType.SERVER) {
+            currentIv = chooser.getQuicApplicationServerIv();
+            currentKey = chooser.getQuicApplicationServerKey();
+        } else {
+            currentIv = chooser.getQuicApplicationClientIv();
+            currentKey = chooser.getQuicApplicationClientKey();
+        }
+        String cipherAlgorithm = chooser.getQuicAeadCipher();
+
+        int receivedKeyPhase =
+                (packet.getUnprotectedFlags().getValue() & MiscRfcConstants.KEY_PHASE_BIT) == 0
+                        ? 0
+                        : 1;
+        int currentKeyPhase = quicContext.getApplicationKeyPhase(protectingEndType) & 1;
+
+        if (receivedKeyPhase == currentKeyPhase) {
+            decryptWith(packet, currentIv, currentKey, cipherAlgorithm);
+            noteCurrentKeyPhasePacketNumber(packet);
+            return;
+        }
+
+        byte[] previousIv = quicContext.getPreviousApplicationIv(protectingEndType);
+        byte[] previousKey = quicContext.getPreviousApplicationKey(protectingEndType);
+        if (previousIv != null
+                && previousKey != null
+                && packet.getPlainPacketNumber()
+                        < quicContext.getLowestReceivedOneRTTPacketNumberInCurrentKeyPhase()) {
+            LOGGER.debug(
+                    "1-RTT packet {} carries the previous key phase, decrypting it with the retained keys",
+                    packet.getPlainPacketNumber());
+            decryptWith(packet, previousIv, previousKey, cipherAlgorithm);
+            return;
+        }
+
+        QuicPacketCryptoComputations.ApplicationKeyMaterial nextKeys;
+        try {
+            nextKeys =
+                    QuicPacketCryptoComputations.calculateNextApplicationSecrets(
+                            quicContext, protectingEndType);
+        } catch (CryptoException | NoSuchAlgorithmException unavailable) {
+            // Without the peer's current application secret there is no next generation to try.
+            // Fall back to the current keys, which is what this endpoint did with every 1-RTT
+            // packet before key updates were implemented. The packet number is deliberately not
+            // recorded as belonging to the current key phase: its Key Phase bit says it does not.
+            LOGGER.debug(
+                    "Cannot derive the next application secrets, decrypting with the current ones",
+                    unavailable);
+            decryptWith(packet, currentIv, currentKey, cipherAlgorithm);
+            return;
+        }
+
+        // Throws if the packet does not authenticate, before anything is committed.
+        decryptWith(packet, nextKeys.iv(), nextKeys.key(), cipherAlgorithm);
+        try {
+            QuicPacketCryptoComputations.completePeerInitiatedKeyUpdate(
+                    quicContext, protectingEndType, nextKeys);
+        } catch (NoSuchAlgorithmException e) {
+            throw new CryptoException("Could not update the send keys after a key update", e);
+        }
+        noteCurrentKeyPhasePacketNumber(packet);
+    }
+
+    /**
+     * Records a packet number as belonging to the key phase currently read with, which is what RFC
+     * 9001 section 6.5 compares a later packet's number against to tell the previous generation
+     * from the next one.
+     *
+     * @param packet a packet just unprotected with the current generation's keys
+     */
+    private void noteCurrentKeyPhasePacketNumber(QuicPacket packet) {
+        int packetNumber = packet.getPlainPacketNumber();
+        if (packetNumber < quicContext.getLowestReceivedOneRTTPacketNumberInCurrentKeyPhase()) {
+            quicContext.setLowestReceivedOneRTTPacketNumberInCurrentKeyPhase(packetNumber);
+        }
     }
 
     public void decryptZeroRTTPacket(QuicPacket packet) throws CryptoException {
@@ -237,6 +339,24 @@ public class QuicDecryptor {
                 chooser.getQuicZeroRTTAeadCipher());
     }
 
+    /**
+     * The connection end whose packet protection keys protect the packets currently being read.
+     *
+     * @return that connection end, or null if it is unknown
+     */
+    private ConnectionEndType resolveProtectingConnectionEnd() {
+        ConnectionEndType connectionEndType = chooser.getTalkingConnectionEnd();
+        if (connectionEndType == null) {
+            return null;
+        }
+        // when attempting to read echoed ClientHello messages we have to use our keys for static
+        // decryption
+        if (chooser.getConfig().isEchoQuic()) {
+            connectionEndType = connectionEndType.getPeer();
+        }
+        return connectionEndType;
+    }
+
     private void decrypt(
             QuicPacket packet,
             byte[] serverIv,
@@ -245,30 +365,37 @@ public class QuicDecryptor {
             byte[] clientKey,
             String cipherAlgorithm)
             throws CryptoException {
-        ConnectionEndType connectionEndType = chooser.getTalkingConnectionEnd();
+        ConnectionEndType connectionEndType = resolveProtectingConnectionEnd();
         byte[] decryptionIv;
         byte[] decryptionKey;
 
-        // when attempting to read echoed ClientHello messages we have to use our keys for static
-        // decryption
-        if (chooser.getConfig().isEchoQuic()) {
-            connectionEndType = connectionEndType.getPeer();
+        if (connectionEndType == ConnectionEndType.SERVER) {
+            decryptionIv = serverIv;
+            decryptionKey = serverKey;
+        } else if (connectionEndType == ConnectionEndType.CLIENT) {
+            decryptionIv = clientIv;
+            decryptionKey = clientKey;
+        } else {
+            LOGGER.error("Unknown connectionEndType: {}", connectionEndType);
+            return;
         }
+        decryptWith(packet, decryptionIv, decryptionKey, cipherAlgorithm);
+    }
 
-        switch (connectionEndType) {
-            case SERVER:
-                decryptionIv = serverIv;
-                decryptionKey = serverKey;
-                break;
-            case CLIENT:
-                decryptionIv = clientIv;
-                decryptionKey = clientKey;
-                break;
-            default:
-                LOGGER.error("Unknown connectionEndType: {}", connectionEndType);
-                return;
-        }
-
+    /**
+     * Removes the packet protection of a packet with one specific key and IV. Every caller has
+     * already resolved which connection end, and for 1-RTT packets which key generation, the
+     * material belongs to.
+     *
+     * @param packet the packet to decrypt
+     * @param decryptionIv the packet protection IV
+     * @param decryptionKey the packet protection key
+     * @param cipherAlgorithm the AEAD algorithm
+     * @throws CryptoException if the packet does not authenticate under this material
+     */
+    private void decryptWith(
+            QuicPacket packet, byte[] decryptionIv, byte[] decryptionKey, String cipherAlgorithm)
+            throws CryptoException {
         byte[] encryptedPayload =
                 new byte
                         [packet.getPacketLength().getValue()
