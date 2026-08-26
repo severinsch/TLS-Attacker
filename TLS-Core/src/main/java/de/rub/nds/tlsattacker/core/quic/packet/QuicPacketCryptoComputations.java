@@ -423,8 +423,9 @@ public class QuicPacketCryptoComputations extends ModifiableVariableHolder {
 
     /**
      * Initiates a key update (RFC 9001 section 6.1): updates the write and read keys and toggles
-     * the Key Phase bit. The old read keys are kept for delayed packets (section 6.5). The section
-     * 6.1 preconditions on when to initiate are not enforced.
+     * the Key Phase bit. The replaced keys are kept in both directions: for delayed packets on read
+     * (section 6.5), and so a packet can select them on write (section 6.4 permits keeping them).
+     * The section 6.1 preconditions on when to initiate are not enforced.
      *
      * @param context the QUIC context to update
      * @throws CryptoException if the current secrets are unknown or a derivation fails
@@ -485,16 +486,17 @@ public class QuicPacketCryptoComputations extends ModifiableVariableHolder {
      * @param context the QUIC context to update
      * @param endType the connection end whose keys are replaced
      * @param nextKeys the material to install
-     * @param receiveDirection whether the replaced key and IV are retained (RFC 9001 section 6.5)
+     * @param receiveDirection whether this endpoint reads with {@code endType}'s keys; only then is
+     *     the packet number boundary of RFC 9001 section 6.5 reset
      */
     private static void installNextApplicationKeys(
             QuicContext context,
             ConnectionEndType endType,
             ApplicationKeyMaterial nextKeys,
             boolean receiveDirection) {
+        context.setPreviousApplicationKey(endType, context.getApplicationKey(endType));
+        context.setPreviousApplicationIv(endType, context.getApplicationIv(endType));
         if (receiveDirection) {
-            context.setPreviousApplicationKey(endType, context.getApplicationKey(endType));
-            context.setPreviousApplicationIv(endType, context.getApplicationIv(endType));
             // No packet of the new generation read yet (RFC 9001 section 6.5).
             context.setLowestReceivedOneRTTPacketNumberInCurrentKeyPhase(Integer.MAX_VALUE);
         }

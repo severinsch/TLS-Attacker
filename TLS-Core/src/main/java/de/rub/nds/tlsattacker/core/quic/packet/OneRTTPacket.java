@@ -10,6 +10,7 @@ package de.rub.nds.tlsattacker.core.quic.packet;
 
 import de.rub.nds.modifiablevariable.ModifiableVariableFactory;
 import de.rub.nds.tlsattacker.core.quic.constants.QuicCryptoSecrets;
+import de.rub.nds.tlsattacker.core.quic.constants.QuicKeyPhaseSelection;
 import de.rub.nds.tlsattacker.core.quic.constants.QuicPacketType;
 import de.rub.nds.tlsattacker.core.quic.handler.packet.OneRTTPacketHandler;
 import de.rub.nds.tlsattacker.core.quic.parser.packet.OneRTTPacketParser;
@@ -30,6 +31,12 @@ public class OneRTTPacket extends QuicPacket {
 
     private static final Logger LOGGER = LogManager.getLogger();
 
+    /**
+     * The key generation to protect this packet with; null means {@link
+     * QuicKeyPhaseSelection#CURRENT}.
+     */
+    private QuicKeyPhaseSelection keyPhaseSelection;
+
     public OneRTTPacket() {
         super(QuicPacketType.ONE_RTT_PACKET);
         this.packetSecret = QuicCryptoSecrets.APPLICATION_SECRET;
@@ -40,6 +47,21 @@ public class OneRTTPacket extends QuicPacket {
         this.setProtectedFlags(flags);
         protectedHeaderHelper.write(flags);
         this.packetSecret = QuicCryptoSecrets.APPLICATION_SECRET;
+    }
+
+    /**
+     * @return the key generation to protect this packet with, never null
+     */
+    public QuicKeyPhaseSelection getKeyPhaseSelection() {
+        return keyPhaseSelection == null ? QuicKeyPhaseSelection.CURRENT : keyPhaseSelection;
+    }
+
+    /**
+     * @param keyPhaseSelection the key generation to protect this packet with, or null for {@link
+     *     QuicKeyPhaseSelection#CURRENT}
+     */
+    public void setKeyPhaseSelection(QuicKeyPhaseSelection keyPhaseSelection) {
+        this.keyPhaseSelection = keyPhaseSelection;
     }
 
     @Override

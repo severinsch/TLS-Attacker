@@ -9,11 +9,13 @@
 package de.rub.nds.tlsattacker.core.quic.crypto;
 
 import de.rub.nds.protocol.exception.CryptoException;
+import de.rub.nds.tlsattacker.core.quic.constants.QuicKeyPhaseSelection;
 import de.rub.nds.tlsattacker.core.quic.packet.HandshakePacket;
 import de.rub.nds.tlsattacker.core.quic.packet.InitialPacket;
 import de.rub.nds.tlsattacker.core.quic.packet.OneRTTPacket;
 import de.rub.nds.tlsattacker.core.quic.packet.QuicPacket;
 import de.rub.nds.tlsattacker.core.quic.packet.QuicPacketCryptoComputations;
+import de.rub.nds.tlsattacker.core.state.quic.QuicContext;
 import de.rub.nds.tlsattacker.core.workflow.chooser.Chooser;
 import de.rub.nds.tlsattacker.transport.ConnectionEndType;
 import java.security.InvalidAlgorithmParameterException;
@@ -154,7 +156,18 @@ public class QuicEncryptor {
                 chooser.getQuicAeadCipher());
     }
 
+    /**
+     * Protects a 1-RTT packet with the key generation it selects, by default the current one.
+     *
+     * @param packet the packet to protect
+     * @throws CryptoException if the packet cannot be protected with the selected generation
+     */
     public void encryptOneRRTPacket(QuicPacket packet) throws CryptoException {
+        if (packet instanceof OneRTTPacket oneRTTPacket
+                && oneRTTPacket.getKeyPhaseSelection() == QuicKeyPhaseSelection.PREVIOUS) {
+            this.encryptWithPreviousApplicationKeys(oneRTTPacket);
+            return;
+        }
         this.encrypt(
                 packet,
                 chooser.getQuicApplicationServerIv(),
@@ -162,6 +175,31 @@ public class QuicEncryptor {
                 chooser.getQuicApplicationClientIv(),
                 chooser.getQuicApplicationClientKey(),
                 chooser.getQuicAeadCipher());
+    }
+
+    /**
+     * Protects a 1-RTT packet with the keys the last key update replaced. They are read from the
+     * context, not the chooser, whose fallback to configured defaults would silently use unrelated
+     * keys.
+     *
+     * @param packet the packet to protect
+     * @throws CryptoException if there are no previous keys, or the packet cannot be protected
+     */
+    private void encryptWithPreviousApplicationKeys(OneRTTPacket packet) throws CryptoException {
+        QuicContext quicContext = chooser.getContext().getQuicContext();
+        ConnectionEndType writeEndType = chooser.getTalkingConnectionEnd();
+        byte[] previousIv = quicContext.getPreviousApplicationIv(writeEndType);
+        byte[] previousKey = quicContext.getPreviousApplicationKey(writeEndType);
+        if (previousIv == null || previousKey == null) {
+            throw new CryptoException(
+                    "Cannot protect a 1-RTT packet with the previous key phase: no key update has"
+                            + " replaced the "
+                            + writeEndType
+                            + " application keys, so there is no previous generation");
+        }
+        LOGGER.debug(
+                "Protecting a 1-RTT packet with the previous key phase, which RFC 9001 section 6.4 tells the peer to answer with KEY_UPDATE_ERROR");
+        this.encryptWith(packet, previousIv, previousKey, chooser.getQuicAeadCipher());
     }
 
     public void encryptZeroRTTPacket(QuicPacket packet) throws CryptoException {
@@ -199,7 +237,21 @@ public class QuicEncryptor {
                 LOGGER.error("Unknown connectionEndType: {}", connectionEndType);
                 return;
         }
+        encryptWith(packet, encryptionIv, encryptionKey, cipherAlgorithm);
+    }
 
+    /**
+     * Protects a packet with the given key and IV.
+     *
+     * @param packet the packet to protect
+     * @param encryptionIv the packet protection IV
+     * @param encryptionKey the packet protection key
+     * @param cipherAlgorithm the AEAD algorithm
+     * @throws CryptoException if the packet cannot be protected
+     */
+    private void encryptWith(
+            QuicPacket packet, byte[] encryptionIv, byte[] encryptionKey, String cipherAlgorithm)
+            throws CryptoException {
         byte[] decryptedPayload = packet.getUnprotectedPayload().getValue();
         byte[] nonce = new byte[12];
         byte[] paddedPacketNumber = new byte[12];
