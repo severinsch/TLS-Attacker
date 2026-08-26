@@ -470,11 +470,16 @@ public class QuicPacketCryptoComputations extends ModifiableVariableHolder {
      * keys that it uses for receiving packets. These keys will be needed to process packets the
      * peer sends after updating."
      *
-     * <p>The replaced read key and IV are retained (RFC 9001 sections 6.1 and 6.5), so packets the
-     * network delayed across the update still decrypt. The replaced write key and IV are not: "An
-     * endpoint never sends packets that are protected with old keys. Only the current keys are
-     * used. Keys used for protecting packets can be discarded immediately after switching to newer
-     * keys" (section 6.4).
+     * <p>The replaced key and IV are retained in both directions. For the read direction RFC 9001
+     * sections 6.1 and 6.5 require it, so that packets the network delayed across the update still
+     * decrypt. For the write direction section 6.4 permits it: "Keys used for protecting packets
+     * can be discarded immediately after switching to newer keys" is a licence, not an obligation,
+     * and the same section's MUST is about which keys protect which packet numbers rather than
+     * about how long a key may be held. Retaining them is what lets a caller ask for a packet
+     * protected with the previous generation, which is the only stimulus that can make a peer owe
+     * the KEY_UPDATE_ERROR section 6.4 requires of it. Nothing sends with them unless a caller
+     * selects them per packet ({@link
+     * de.rub.nds.tlsattacker.core.quic.constants.QuicKeyPhaseSelection}).
      *
      * <p>Section 6.1 additionally forbids initiating a key update before the handshake is confirmed
      * and before an acknowledgment for a packet of the current key phase has been received. Those
@@ -557,17 +562,17 @@ public class QuicPacketCryptoComputations extends ModifiableVariableHolder {
      * @param endType the connection end whose keys are replaced
      * @param nextKeys the material to install
      * @param receiveDirection whether {@code endType} is the end this endpoint decrypts packets
-     *     from. Only then are the replaced key and IV retained (RFC 9001 sections 6.1 and 6.5); a
-     *     sender discards its old keys immediately (section 6.4).
+     *     from. Only then is the key phase's packet number boundary reset, which is a fact about
+     *     packets received (RFC 9001 section 6.5). The replaced key and IV are retained either way.
      */
     private static void installNextApplicationKeys(
             QuicContext context,
             ConnectionEndType endType,
             ApplicationKeyMaterial nextKeys,
             boolean receiveDirection) {
+        context.setPreviousApplicationKey(endType, context.getApplicationKey(endType));
+        context.setPreviousApplicationIv(endType, context.getApplicationIv(endType));
         if (receiveDirection) {
-            context.setPreviousApplicationKey(endType, context.getApplicationKey(endType));
-            context.setPreviousApplicationIv(endType, context.getApplicationIv(endType));
             // No packet of the new generation has been unprotected yet, so every packet number is
             // still "lower than any packet number from the current key phase" (RFC 9001 section
             // 6.5) and a packet carrying the old Key Phase bit belongs to the previous generation.

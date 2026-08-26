@@ -751,6 +751,13 @@ public class QuicContext extends LayerContext {
      * successfully unprotected a packet sent with the new ones, and section 6.5 uses them for
      * packets the network delayed across a key update.
      *
+     * <p>They are retained for the end this endpoint writes with as well, where section 6.4 permits
+     * rather than requires it ("Keys used for protecting packets can be discarded immediately after
+     * switching to newer keys"). Holding them costs nothing on the wire -- packets are protected
+     * with them only where a caller selects them per packet, see {@link
+     * de.rub.nds.tlsattacker.core.quic.constants.QuicKeyPhaseSelection} -- and without them the
+     * connection error section 6.4 demands of a receiver cannot be provoked at all.
+     *
      * @param endType the connection end whose packet protection keys are meant
      * @return the previous generation's key, or null
      */

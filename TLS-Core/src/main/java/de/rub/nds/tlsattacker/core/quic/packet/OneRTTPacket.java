@@ -10,6 +10,7 @@ package de.rub.nds.tlsattacker.core.quic.packet;
 
 import de.rub.nds.modifiablevariable.ModifiableVariableFactory;
 import de.rub.nds.tlsattacker.core.quic.constants.QuicCryptoSecrets;
+import de.rub.nds.tlsattacker.core.quic.constants.QuicKeyPhaseSelection;
 import de.rub.nds.tlsattacker.core.quic.constants.QuicPacketType;
 import de.rub.nds.tlsattacker.core.quic.handler.packet.OneRTTPacketHandler;
 import de.rub.nds.tlsattacker.core.quic.parser.packet.OneRTTPacketParser;
@@ -30,6 +31,16 @@ public class OneRTTPacket extends QuicPacket {
 
     private static final Logger LOGGER = LogManager.getLogger();
 
+    /**
+     * Which generation of application packet protection keys protects this packet, or null for the
+     * generation this endpoint currently writes with.
+     *
+     * <p>Left unset rather than initialized to {@link QuicKeyPhaseSelection#CURRENT}, so that a
+     * packet nobody made a selection on serializes exactly as it did before the selection existed.
+     * {@link #getKeyPhaseSelection()} resolves the null.
+     */
+    private QuicKeyPhaseSelection keyPhaseSelection;
+
     public OneRTTPacket() {
         super(QuicPacketType.ONE_RTT_PACKET);
         this.packetSecret = QuicCryptoSecrets.APPLICATION_SECRET;
@@ -40,6 +51,28 @@ public class OneRTTPacket extends QuicPacket {
         this.setProtectedFlags(flags);
         protectedHeaderHelper.write(flags);
         this.packetSecret = QuicCryptoSecrets.APPLICATION_SECRET;
+    }
+
+    /**
+     * The generation of application packet protection keys this packet is to be protected with. RFC
+     * 9001 section 6 gives an endpoint more than one: the generation it currently writes with, and
+     * the one a key update replaced, which section 6.4 allows but does not oblige it to discard.
+     *
+     * @return the selection, never null; {@link QuicKeyPhaseSelection#CURRENT} when none was made
+     */
+    public QuicKeyPhaseSelection getKeyPhaseSelection() {
+        return keyPhaseSelection == null ? QuicKeyPhaseSelection.CURRENT : keyPhaseSelection;
+    }
+
+    /**
+     * Selects the generation of application packet protection keys this packet is to be protected
+     * with. {@link QuicKeyPhaseSelection#PREVIOUS} produces a packet a conforming endpoint never
+     * sends: see that constant for what RFC 9001 section 6.4 has a receiver do with it.
+     *
+     * @param keyPhaseSelection the selection, or null for {@link QuicKeyPhaseSelection#CURRENT}
+     */
+    public void setKeyPhaseSelection(QuicKeyPhaseSelection keyPhaseSelection) {
+        this.keyPhaseSelection = keyPhaseSelection;
     }
 
     @Override

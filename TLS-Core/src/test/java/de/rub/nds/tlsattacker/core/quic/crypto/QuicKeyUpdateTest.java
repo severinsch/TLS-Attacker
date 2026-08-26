@@ -24,6 +24,7 @@ import de.rub.nds.tlsattacker.core.config.delegate.ServerDelegate;
 import de.rub.nds.tlsattacker.core.constants.CipherSuite;
 import de.rub.nds.tlsattacker.core.constants.HKDFAlgorithm;
 import de.rub.nds.tlsattacker.core.quic.constants.MiscRfcConstants;
+import de.rub.nds.tlsattacker.core.quic.constants.QuicKeyPhaseSelection;
 import de.rub.nds.tlsattacker.core.quic.constants.QuicPacketType;
 import de.rub.nds.tlsattacker.core.quic.packet.OneRTTPacket;
 import de.rub.nds.tlsattacker.core.quic.packet.QuicPacketCryptoComputations;
@@ -99,6 +100,21 @@ public class QuicKeyUpdateTest {
                     + "C81DB48DC5841BF3CDDF6D3C5E62CF4F70BB10A45FCD1ABAA3DD5B2F08257E6D2FF8899"
                     + "18C2666BDAA4652E0540186519403244D71B";
 
+    /**
+     * The packet {@link #testKeyPhaseRetentionDoesNotMoveThePacketSentAfterAnUpdate} produces,
+     * recorded by running the same fixture against this code with the write key retention reverted,
+     * and the generation-1 client key and IV that protect it. Retaining a key an endpoint used to
+     * write with cannot change what it writes, and this is what says so in bytes.
+     */
+    private static final String GOLDEN_AFTER_UPDATE_PACKET =
+            "451112131415161718E97017E5EF69138076CD18B0C41E2A2622F0DD58581A91BFF34B1131"
+                    + "DF4760E23D92AD285DD5A4BBA385402FE155B8D3D984A7815E218C95F49B4FEEE573906"
+                    + "5D33E9D512F1BA06354BAE412A68079A2C3B9DCFCB14F8B420F79716AFB3801D6574278"
+                    + "ADF6B382EC1F4EAB952DBB0FBA82A5D4C336";
+
+    private static final String GOLDEN_AFTER_UPDATE_CLIENT_KEY = "68415B7F47063215B9ED8CF3D82460CF";
+    private static final String GOLDEN_AFTER_UPDATE_CLIENT_IV = "8B5DFEB83DA37C552E5DEDBF";
+
     private static final String GOLDEN_CLIENT_KEY = "72E75FDFADB4C2EC96F37F8EB1F3B2E8";
     private static final String GOLDEN_CLIENT_IV = "190D992E8AC5A7970B75071B";
     private static final String GOLDEN_CLIENT_HP = "F0B19DF1C7AA20E98E9623B45A57B5A5";
@@ -146,8 +162,19 @@ public class QuicKeyUpdateTest {
 
     /** Prepares, protects and serializes one 1-RTT packet, as the packet layer does. */
     private static byte[] send(Context sender, int packetNumber) throws CryptoException {
+        return send(sender, packetNumber, null);
+    }
+
+    /**
+     * The same, with an explicit selection of the generation of application keys to protect the
+     * packet with. A null selection is the default path: nobody touched the packet's key phase.
+     */
+    private static byte[] send(
+            Context sender, int packetNumber, QuicKeyPhaseSelection keyPhaseSelection)
+            throws CryptoException {
         sender.setTalkingConnectionEndType(sender.getConnection().getLocalConnectionEndType());
         OneRTTPacket packet = new OneRTTPacket();
+        packet.setKeyPhaseSelection(keyPhaseSelection);
         packet.setUnprotectedPayload(PAYLOAD);
         packet.setUnprotectedPacketNumber(packetNumber);
         packet.getPreparator(sender).prepare();
@@ -241,6 +268,7 @@ public class QuicKeyUpdateTest {
         byte[] clientHeaderProtectionKey = quicContext.getApplicationClientHeaderProtectionKey();
         byte[] serverHeaderProtectionKey = quicContext.getApplicationServerHeaderProtectionKey();
         byte[] clientKey = quicContext.getApplicationKey(ConnectionEndType.CLIENT);
+        byte[] clientIv = quicContext.getApplicationIv(ConnectionEndType.CLIENT);
         byte[] serverKey = quicContext.getApplicationKey(ConnectionEndType.SERVER);
         byte[] serverIv = quicContext.getApplicationIv(ConnectionEndType.SERVER);
 
@@ -260,10 +288,12 @@ public class QuicKeyUpdateTest {
         assertEquals(1, quicContext.getApplicationKeyPhase(ConnectionEndType.CLIENT));
         assertEquals(1, quicContext.getApplicationKeyPhase(ConnectionEndType.SERVER));
 
-        // The write direction discards its old keys (section 6.4); the read direction retains them
-        // (sections 6.1 and 6.5).
-        assertNull(quicContext.getPreviousApplicationKey(ConnectionEndType.CLIENT));
-        assertNull(quicContext.getPreviousApplicationIv(ConnectionEndType.CLIENT));
+        // Both directions retain the generation they replaced: the read direction because RFC 9001
+        // sections 6.1 and 6.5 require it, the write direction because section 6.4 permits it and
+        // nothing else can produce the packet that section tells a receiver to reject.
+        assertArrayEquals(
+                clientKey, quicContext.getPreviousApplicationKey(ConnectionEndType.CLIENT));
+        assertArrayEquals(clientIv, quicContext.getPreviousApplicationIv(ConnectionEndType.CLIENT));
         assertArrayEquals(
                 serverKey, quicContext.getPreviousApplicationKey(ConnectionEndType.SERVER));
         assertArrayEquals(serverIv, quicContext.getPreviousApplicationIv(ConnectionEndType.SERVER));
@@ -376,6 +406,134 @@ public class QuicKeyUpdateTest {
     }
 
     /**
+     * RFC 9001 section 6.4, the send side. A packet may be protected with the generation a key
+     * update replaced, and it then carries that generation's Key Phase bit rather than the
+     * endpoint's current one - which is the whole point, since the bit is what tells the receiver
+     * which keys to try.
+     *
+     * <p>A conforming endpoint never sends this packet: "An endpoint never sends packets that are
+     * protected with old keys." Its receiver, however, owes an answer to it, and that answer is a
+     * MUST: "Packets with higher packet numbers MUST be protected with either the same or newer
+     * packet protection keys than packets with lower packet numbers. An endpoint that successfully
+     * removes protection with old keys when newer keys were used for packets with lower packet
+     * numbers MUST treat this as a connection error of type KEY_UPDATE_ERROR." Nothing else can
+     * produce the stimulus that rule is about.
+     *
+     * <p>That the packet really is protected with the replaced generation is shown by a peer that
+     * has not seen the update yet: the replaced generation is still its current one, so it reads
+     * the packet with the keys it already had.
+     */
+    @Test
+    public void testPacketMayBeProtectedWithThePreviousKeyPhase() throws Exception {
+        Context client = endpoint(ConnectionEndType.CLIENT);
+        Context server = endpoint(ConnectionEndType.SERVER);
+        receive(server, send(client, 5));
+
+        QuicPacketCryptoComputations.initiateKeyUpdate(client.getQuicContext());
+        assertEquals(1, client.getQuicContext().getApplicationKeyPhase(ConnectionEndType.CLIENT));
+
+        byte[] datagram = send(client, 6, QuicKeyPhaseSelection.PREVIOUS);
+        OneRTTPacket sentWithOldKeys = receive(server, datagram);
+
+        // The bit announces the generation the packet was protected with, not the one the sender
+        // has moved on to.
+        assertEquals(0, keyPhaseBitOf(sentWithOldKeys));
+        assertCarriesPayload(sentWithOldKeys);
+        // The peer never saw a key update, so nothing about its key state moved.
+        assertEquals(0, server.getQuicContext().getApplicationKeyPhase(ConnectionEndType.CLIENT));
+        assertEquals(0, server.getQuicContext().getApplicationKeyPhase(ConnectionEndType.SERVER));
+
+        // And the sender is unchanged by it: the selection is a property of that one packet, so
+        // the next packet goes out at the current generation again and the peer follows it.
+        OneRTTPacket afterwards = receive(server, send(client, 7));
+        assertEquals(1, client.getQuicContext().getApplicationKeyPhase(ConnectionEndType.CLIENT));
+        assertEquals(1, keyPhaseBitOf(afterwards));
+        assertCarriesPayload(afterwards);
+    }
+
+    /**
+     * The previous generation cannot be selected before a key update has produced one. Falling back
+     * to the current generation would send a conforming packet in answer to a request for a
+     * non-conforming one, and the peer's reply would then be read as evidence about RFC 9001
+     * section 6.4 while having nothing to do with it.
+     */
+    @Test
+    public void testPreviousKeyPhaseIsRefusedBeforeAnyKeyUpdate() throws Exception {
+        Context client = endpoint(ConnectionEndType.CLIENT);
+
+        CryptoException refused =
+                assertThrows(
+                        CryptoException.class,
+                        () -> send(client, 5, QuicKeyPhaseSelection.PREVIOUS));
+        assertTrue(refused.getMessage().contains("previous key phase"));
+
+        // Nothing was consumed by the refusal: the endpoint is still on generation 0 and still
+        // sends normally.
+        assertEquals(0, client.getQuicContext().getApplicationKeyPhase(ConnectionEndType.CLIENT));
+        Context server = endpoint(ConnectionEndType.SERVER);
+        assertCarriesPayload(receive(server, send(client, 5)));
+    }
+
+    /**
+     * The default path after a key update, in bytes. Retaining the write keys a key update replaced
+     * adds a value to the context and nothing else: the packet an endpoint sends once it has
+     * updated is byte for byte the packet the same fixture produces with the retention reverted,
+     * and it is protected with the new generation, not the retained one.
+     */
+    @Test
+    public void testKeyPhaseRetentionDoesNotMoveThePacketSentAfterAnUpdate() throws Exception {
+        Context client = endpoint(ConnectionEndType.CLIENT);
+        QuicPacketCryptoComputations.initiateKeyUpdate(client.getQuicContext());
+
+        byte[] datagram = send(client, 6);
+
+        assertEquals(GOLDEN_AFTER_UPDATE_PACKET, DataConverter.bytesToRawHexString(datagram));
+        assertEquals(
+                GOLDEN_AFTER_UPDATE_CLIENT_KEY,
+                DataConverter.bytesToRawHexString(
+                        client.getQuicContext().getApplicationClientKey()));
+        assertEquals(
+                GOLDEN_AFTER_UPDATE_CLIENT_IV,
+                DataConverter.bytesToRawHexString(
+                        client.getQuicContext().getApplicationClientIv()));
+
+        // The retained generation is the one the golden values are NOT, which is what makes the
+        // comparison mean something.
+        assertEquals(
+                GOLDEN_CLIENT_KEY,
+                DataConverter.bytesToRawHexString(
+                        client.getQuicContext()
+                                .getPreviousApplicationKey(ConnectionEndType.CLIENT)));
+        assertEquals(
+                GOLDEN_CLIENT_IV,
+                DataConverter.bytesToRawHexString(
+                        client.getQuicContext()
+                                .getPreviousApplicationIv(ConnectionEndType.CLIENT)));
+    }
+
+    /**
+     * The selection is the only thing that changes anything. A packet that asks for the current
+     * generation is byte for byte a packet that asks for nothing, both before and after a key
+     * update, so retaining the replaced write keys cannot move a run that never selects them.
+     */
+    @Test
+    public void testSelectingTheCurrentKeyPhaseIsTheDefaultPath() throws Exception {
+        Context beforeUpdateDefault = endpoint(ConnectionEndType.CLIENT);
+        Context beforeUpdateExplicit = endpoint(ConnectionEndType.CLIENT);
+        assertArrayEquals(
+                send(beforeUpdateDefault, 5),
+                send(beforeUpdateExplicit, 5, QuicKeyPhaseSelection.CURRENT));
+
+        Context afterUpdateDefault = endpoint(ConnectionEndType.CLIENT);
+        Context afterUpdateExplicit = endpoint(ConnectionEndType.CLIENT);
+        QuicPacketCryptoComputations.initiateKeyUpdate(afterUpdateDefault.getQuicContext());
+        QuicPacketCryptoComputations.initiateKeyUpdate(afterUpdateExplicit.getQuicContext());
+        assertArrayEquals(
+                send(afterUpdateDefault, 6),
+                send(afterUpdateExplicit, 6, QuicKeyPhaseSelection.CURRENT));
+    }
+
+    /**
      * The default path. With no key update anywhere, the first byte is exactly what it was before
      * the Key Phase bit existed in this code, the serialized packet is byte for byte the recorded
      * one, and no key phase state moves.
@@ -459,8 +617,8 @@ public class QuicKeyUpdateTest {
         QuicPacketCryptoComputations.initiateKeyUpdate(clientQuic);
         assertEquals(1, clientQuic.getApplicationKeyPhase(ConnectionEndType.CLIENT));
         assertEquals(1, clientQuic.getApplicationKeyPhase(ConnectionEndType.SERVER));
-        // Previous keys are retained on the READ direction only (RFC 9001 section 6.5), and this
-        // endpoint is the client, so it is the SERVER material that has a previous generation.
+        // Both directions have a previous generation after an update.
+        assertNotNull(clientQuic.getPreviousApplicationKey(ConnectionEndType.CLIENT));
         assertNotNull(clientQuic.getPreviousApplicationKey(ConnectionEndType.SERVER));
 
         QuicPacketCryptoComputations.calculateApplicationSecrets(client);
