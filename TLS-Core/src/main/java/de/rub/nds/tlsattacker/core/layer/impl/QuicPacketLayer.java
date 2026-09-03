@@ -65,7 +65,8 @@ public class QuicPacketLayer
     private final QuicDecryptor decryptor;
     private final QuicEncryptor encryptor;
 
-    private final Map<QuicPacketType, ArrayList<QuicPacket>> receivedPacketBuffer = new HashMap<>();
+    /** Package-private so the epoch-ordering rule below can be tested without a live peer. */
+    final Map<QuicPacketType, ArrayList<QuicPacket>> receivedPacketBuffer = new HashMap<>();
 
     public QuicPacketLayer(Context context) {
         super(ImplementedLayers.QUICPACKET);
@@ -758,14 +759,24 @@ public class QuicPacketLayer
         }
     }
 
-    private QuicPacketType getPacketTypeToProcessNext() {
+    QuicPacketType getPacketTypeToProcessNext() {
         if (!receivedPacketBuffer.get(QuicPacketType.INITIAL_PACKET).isEmpty()
                 && quicContext.isInitialSecretsInitialized()
                 && !quicContext.isHandshakeSecretsInitialized()) {
             return QuicPacketType.INITIAL_PACKET;
         } else if (!receivedPacketBuffer.get(QuicPacketType.HANDSHAKE_PACKET).isEmpty()
-                && quicContext.isHandshakeSecretsInitialized()
-                && !quicContext.isApplicationSecretsInitialized()) {
+                && quicContext.isHandshakeSecretsInitialized()) {
+            // Deliberately NOT also "&& !isApplicationSecretsInitialized()". Owning the
+            // application secrets does not end the Handshake packet number space: RFC 9001
+            // Section 4.9.2 lets an endpoint discard its Handshake keys only once the handshake
+            // is CONFIRMED, and for a server that is the moment it has processed the peer's
+            // Finished -- which arrives in a Handshake packet AFTER the server derived its own
+            // application secrets from its own Finished. Refusing to hand such a packet up
+            // leaves the peer's Finished decrypted in the buffer and never parsed, so the
+            // handshake transcript ends one message early. Everything derived from the full
+            // transcript is then wrong; RFC 8446 Section 7.1's resumption_master_secret
+            // (ClientHello..client Finished) is the visible case, and a server built this way
+            // issues session tickets no client can resume with.
             return QuicPacketType.HANDSHAKE_PACKET;
         } else if (!receivedPacketBuffer.get(QuicPacketType.ONE_RTT_PACKET).isEmpty()
                 && quicContext.isApplicationSecretsInitialized()) {

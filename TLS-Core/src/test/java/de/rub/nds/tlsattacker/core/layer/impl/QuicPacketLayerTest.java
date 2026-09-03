@@ -12,6 +12,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import de.rub.nds.modifiablevariable.util.DataConverter;
 import de.rub.nds.protocol.exception.CryptoException;
@@ -379,5 +380,47 @@ public class QuicPacketLayerTest extends AbstractLayerTest {
         assertArrayEquals(
                 serverSourceConnectionId, retained1.getDestinationConnectionId().getValue());
         assertEquals(1, retained1.getPlainPacketNumber());
+    }
+
+    /**
+     * RFC 9001 Section 4.9.2 lets an endpoint discard its Handshake keys only once the handshake is
+     * CONFIRMED. For a server that is the moment it has processed the peer's Finished, which
+     * arrives in a Handshake packet AFTER the server derived its own application secrets from its
+     * own Finished. So owning the application secrets must NOT stop Handshake packets from reaching
+     * the upper layer -- if it does, the peer's Finished is decrypted and then never parsed, and
+     * the handshake transcript ends one message early.
+     */
+    @Test
+    public void testHandshakePacketsStillProcessedAfterApplicationSecrets() {
+        setUpInitialSecrets();
+        QuicPacketLayer layer =
+                (QuicPacketLayer) tlsContext.getLayerStack().getLayer(QuicPacketLayer.class);
+        layer.receivedPacketBuffer.get(QuicPacketType.HANDSHAKE_PACKET).add(new HandshakePacket());
+
+        quicContext.setHandshakeSecretsInitialized(true);
+        quicContext.setApplicationSecretsInitialized(true);
+
+        assertEquals(QuicPacketType.HANDSHAKE_PACKET, layer.getPacketTypeToProcessNext());
+    }
+
+    /**
+     * A 1-RTT packet may only be handed up once the application secrets exist, and after any
+     * Handshake packet still waiting: the epochs are processed in order.
+     */
+    @Test
+    public void testOneRttPacketsWaitForHandshakePacketsAndSecrets() {
+        setUpInitialSecrets();
+        QuicPacketLayer layer =
+                (QuicPacketLayer) tlsContext.getLayerStack().getLayer(QuicPacketLayer.class);
+        layer.receivedPacketBuffer.get(QuicPacketType.ONE_RTT_PACKET).add(new OneRTTPacket());
+
+        quicContext.setHandshakeSecretsInitialized(true);
+        assertNull(layer.getPacketTypeToProcessNext());
+
+        quicContext.setApplicationSecretsInitialized(true);
+        assertEquals(QuicPacketType.ONE_RTT_PACKET, layer.getPacketTypeToProcessNext());
+
+        layer.receivedPacketBuffer.get(QuicPacketType.HANDSHAKE_PACKET).add(new HandshakePacket());
+        assertEquals(QuicPacketType.HANDSHAKE_PACKET, layer.getPacketTypeToProcessNext());
     }
 }
