@@ -36,6 +36,7 @@ import de.rub.nds.tlsattacker.core.protocol.message.ClientHelloMessage;
 import de.rub.nds.tlsattacker.core.protocol.message.ServerHelloMessage;
 import de.rub.nds.tlsattacker.core.protocol.message.computations.PWDComputations;
 import de.rub.nds.tlsattacker.core.protocol.message.extension.EncryptedClientHelloExtensionMessage;
+import de.rub.nds.tlsattacker.core.protocol.message.extension.PreSharedKeyExtensionMessage;
 import de.rub.nds.tlsattacker.core.protocol.message.extension.keyshare.DragonFlyKeyShareEntry;
 import de.rub.nds.tlsattacker.core.protocol.message.extension.keyshare.KeyShareStoreEntry;
 import de.rub.nds.tlsattacker.core.protocol.parser.extension.keyshare.DragonFlyKeyShareEntryParser;
@@ -90,7 +91,7 @@ public class ServerHelloHandler extends HandshakeMessageHandler<ServerHelloMessa
         if (!message.hasTls13HelloRetryRequestRandom()) {
             if (tlsContext.getChooser().getSelectedProtocolVersion().is13()) {
                 KeyShareStoreEntry keyShareStoreEntry = adjustKeyShareStoreEntry();
-                adjustHandshakeTrafficSecrets(keyShareStoreEntry);
+                adjustHandshakeTrafficSecrets(message, keyShareStoreEntry);
                 if (tlsContext.getTalkingConnectionEndType()
                         != tlsContext.getChooser().getConnectionEndType()) {
                     setServerRecordCipher();
@@ -243,7 +244,8 @@ public class ServerHelloHandler extends HandshakeMessageHandler<ServerHelloMessa
         }
     }
 
-    private void adjustHandshakeTrafficSecrets(KeyShareStoreEntry keyShareStoreEntry) {
+    private void adjustHandshakeTrafficSecrets(
+            ServerHelloMessage message, KeyShareStoreEntry keyShareStoreEntry) {
         HKDFAlgorithm hkdfAlgorithm =
                 AlgorithmResolver.getHKDFAlgorithm(
                         tlsContext.getChooser().getSelectedCipherSuite());
@@ -261,10 +263,25 @@ public class ServerHelloHandler extends HandshakeMessageHandler<ServerHelloMessa
                         Mac.getInstance(hkdfAlgorithm.getMacAlgorithm().getJavaName())
                                 .getMacLength();
             }
+            // RFC 8446 Section 7.1: the Early Secret's input keying material is the PSK only
+            // when a PSK was actually NEGOTIATED for this handshake, and "a string of
+            // Hash.length bytes set to zeros" otherwise. Whether a PSK was negotiated is
+            // stated by THIS ServerHello: the server signals its selection by echoing the
+            // pre_shared_key extension (Section 4.2.11). Merely HAVING a PSK in the context is
+            // not that signal -- a server that recognises the client's ticket sets one while
+            // deciding to decline it, and a client that offered a ticket the server ignored
+            // still holds one. Deriving the Early Secret from a PSK in either case makes this
+            // side's handshake traffic secrets disagree with the peer's, so every subsequent
+            // handshake record is undecryptable for exactly the handshakes that legally
+            // declined resumption.
+            boolean pskNegotiatedByThisServerHello =
+                    message.getExtension(PreSharedKeyExtensionMessage.class) != null;
             byte[] psk =
-                    (tlsContext.getConfig().isUsePsk() || tlsContext.getPsk() != null)
+                    (pskNegotiatedByThisServerHello
+                                    && (tlsContext.getConfig().isUsePsk()
+                                            || tlsContext.getPsk() != null))
                             ? tlsContext.getChooser().getPsk()
-                            : new byte[macLength]; // use PSK if available
+                            : new byte[macLength];
             byte[] earlySecret = HKDFunction.extract(hkdfAlgorithm, new byte[0], psk);
             byte[] saltHandshakeSecret =
                     HKDFunction.deriveSecret(
