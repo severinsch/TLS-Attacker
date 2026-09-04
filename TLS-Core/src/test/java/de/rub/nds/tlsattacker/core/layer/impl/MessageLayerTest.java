@@ -10,6 +10,7 @@ package de.rub.nds.tlsattacker.core.layer.impl;
 
 import de.rub.nds.modifiablevariable.util.Modifiable;
 import de.rub.nds.tlsattacker.core.constants.ProtocolMessageType;
+import de.rub.nds.tlsattacker.core.layer.LayerProcessingResult;
 import de.rub.nds.tlsattacker.core.protocol.ProtocolMessage;
 import de.rub.nds.tlsattacker.core.protocol.message.AlertMessage;
 import de.rub.nds.tlsattacker.core.protocol.message.ApplicationMessage;
@@ -122,6 +123,38 @@ public class MessageLayerTest extends AbstractLayerTest {
                 };
 
         Assert.assertArrayEquals(expectedOutput, transportHandler.getSentBytes());
+    }
+
+    /**
+     * A handshake message that announces more payload than the peer actually sent must not vanish
+     * without a trace. Before the fix the consumed bytes - type, length and the partial payload -
+     * were discarded inside readChunk, so the receive action reported an empty result and no unread
+     * bytes, which is exactly what a receive that got nothing at all reports.
+     */
+    @Test
+    public void testTruncatedHandshakeMessageIsReportedAsUnreadBytes() {
+        // one TLS record carrying a handshake header that announces 16 payload bytes, of which
+        // only two are present, and nothing follows the record
+        transportHandler.setFetchableByte(
+                new byte[] {
+                    0x16,
+                    0x03,
+                    0x03,
+                    0x00,
+                    0x06, // record header, 6 bytes of content
+                    0x01,
+                    0x00,
+                    0x00,
+                    0x10, // ClientHello announcing 16 payload bytes
+                    0x0a,
+                    0x0b // ... of which two arrived
+                });
+        MessageLayer messageLayer =
+                (MessageLayer) context.getLayerStack().getLayer(MessageLayer.class);
+        LayerProcessingResult<?> result = messageLayer.receiveData();
+        Assert.assertTrue(result.getUsedContainers().isEmpty());
+        Assert.assertArrayEquals(
+                new byte[] {0x01, 0x00, 0x00, 0x10, 0x0a, 0x0b}, result.getUnreadBytes());
     }
 
     private ProtocolMessage createProtocolMessage(ProtocolMessageType protocolMessageType) {

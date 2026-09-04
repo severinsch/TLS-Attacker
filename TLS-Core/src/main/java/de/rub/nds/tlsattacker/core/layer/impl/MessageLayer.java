@@ -28,6 +28,7 @@ import de.rub.nds.tlsattacker.core.layer.hints.QuicFrameLayerHint;
 import de.rub.nds.tlsattacker.core.layer.hints.RecordLayerHint;
 import de.rub.nds.tlsattacker.core.layer.stream.HintedInputStream;
 import de.rub.nds.tlsattacker.core.layer.stream.HintedLayerInputStream;
+import de.rub.nds.tlsattacker.core.layer.stream.IncompleteChunkException;
 import de.rub.nds.tlsattacker.core.protocol.MessageFactory;
 import de.rub.nds.tlsattacker.core.protocol.ProtocolMessage;
 import de.rub.nds.tlsattacker.core.protocol.ProtocolMessageHandler;
@@ -374,6 +375,15 @@ public class MessageLayer extends ProtocolLayer<Context, LayerProcessingHint, Pr
             payload = handshakeStream.readChunk(length);
             readBytesStream.write(payload);
 
+        } catch (IncompleteChunkException ex) {
+            LOGGER.error("Could not read the announced message. Setting bytes as unread: ", ex);
+            // the bytes of this message are consumed and cannot be read again, so record them
+            // here; without this the receive action reports an empty result and the truncation
+            // is indistinguishable from nothing having arrived at all
+            readBytesStream.write(ex.getPartiallyReadBytes());
+            appendUnreadBytes(readBytesStream.toByteArray());
+            // rethrow: an ended stream still ends this receive, exactly as it did before
+            throw ex;
         } catch (IOException ex) {
             LOGGER.error("Could not parse message header. Setting bytes as unread: ", ex);
             // not being able to parse the header leaves us with unreadable bytes
