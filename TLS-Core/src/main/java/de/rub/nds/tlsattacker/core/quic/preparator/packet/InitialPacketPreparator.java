@@ -13,6 +13,7 @@ import de.rub.nds.tlsattacker.core.quic.constants.QuicPacketByteLength;
 import de.rub.nds.tlsattacker.core.quic.constants.QuicPacketType;
 import de.rub.nds.tlsattacker.core.quic.packet.InitialPacket;
 import de.rub.nds.tlsattacker.core.workflow.chooser.Chooser;
+import de.rub.nds.tlsattacker.transport.ConnectionEndType;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -35,8 +36,13 @@ public class InitialPacketPreparator extends LongHeaderPacketPreparator<InitialP
     }
 
     private void prepareToken() {
-        packet.setToken(chooser.getQuicInitialPacketToken());
-        packet.setTokenLength(chooser.getQuicInitialPacketToken().length);
+        // A server's Initial carries no token (RFC 9000 section 17.2.2).
+        byte[] token =
+                chooser.getConnectionEndType() == ConnectionEndType.SERVER
+                        ? new byte[0]
+                        : chooser.getQuicInitialPacketToken();
+        packet.setToken(token);
+        packet.setTokenLength(token.length);
         LOGGER.debug("Token: {}", packet.getToken().getValue());
         LOGGER.debug("Token Length: {}", packet.getTokenLength());
     }
