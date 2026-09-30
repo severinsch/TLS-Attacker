@@ -11,6 +11,7 @@ package de.rub.nds.tlsattacker.core.layer.impl;
 import de.rub.nds.protocol.exception.EndOfStreamException;
 import de.rub.nds.protocol.exception.TimeoutException;
 import de.rub.nds.protocol.util.SilentByteArrayOutputStream;
+import de.rub.nds.tlsattacker.core.constants.HandshakeByteLength;
 import de.rub.nds.tlsattacker.core.constants.HandshakeMessageType;
 import de.rub.nds.tlsattacker.core.constants.ProtocolMessageType;
 import de.rub.nds.tlsattacker.core.layer.AcknowledgingProtocolLayer;
@@ -357,38 +358,28 @@ public class QuicFrameLayer
                             frame.getOffset().getValue() + frame.getLength().getValue()
                                     <= deliveredOffset);
 
-            if (isCryptoBufferGapFree(cryptoFrameBuffer, nextOffset)) {
-                for (CryptoFrame frame : cryptoFrameBuffer) {
-                    long frameOffset = frame.getOffset().getValue();
-                    byte[] frameData = frame.getCryptoData().getValue();
-
-                    if (frameOffset + frameData.length <= nextOffset) {
-                        // Fully covered by a preceding overlapping frame
-                        continue;
-                    }
-                    if (frameOffset < nextOffset) {
-                        // Partially covered by a preceding overlapping frame
-                        frameData =
-                                Arrays.copyOfRange(
-                                        frameData,
-                                        Math.toIntExact(nextOffset - frameOffset),
-                                        frameData.length);
-                        outputStream.write(frameData);
-                        nextOffset += frameData.length;
-                    } else {
-                        outputStream.write(frameData);
-                        nextOffset = frameOffset + frameData.length;
-                    }
-                }
-                cryptoFrameBuffer.clear();
-                setExpectedCryptoFrameOffset(cryptoLevel, nextOffset);
-            } else {
-                // The upper layer keeps no partial-message state, so deliver only a gap-free
-                // stream.
+            byte[] contiguousData = getContiguousCryptoData(cryptoFrameBuffer, nextOffset);
+            boolean gapFree = isCryptoBufferGapFree(cryptoFrameBuffer, nextOffset);
+            // The upper layer keeps no partial-message state across receives, so in front of a
+            // gap only complete handshake messages are passed up.
+            int deliverable =
+                    gapFree
+                            ? contiguousData.length
+                            : getCompleteHandshakeMessagesLength(contiguousData);
+            if (deliverable > 0) {
+                outputStream.write(contiguousData, 0, deliverable);
+                long deliveredUpTo = nextOffset + deliverable;
+                setExpectedCryptoFrameOffset(cryptoLevel, deliveredUpTo);
+                cryptoFrameBuffer.removeIf(
+                        frame ->
+                                frame.getOffset().getValue() + frame.getLength().getValue()
+                                        <= deliveredUpTo);
+            }
+            if (!gapFree) {
                 LOGGER.warn(
                         "Missing CryptoFrames in buffer: {}, nextOffset={}",
                         cryptoBufferToString(cryptoFrameBuffer),
-                        nextOffset);
+                        nextOffset + deliverable);
             }
         }
 
@@ -466,6 +457,55 @@ public class QuicFrameLayer
                             frame.getOffset().getValue() + frame.getLength().getValue());
         }
         return true;
+    }
+
+    /**
+     * The buffered CRYPTO data from nextOffset up to the first gap, without duplicates.
+     *
+     * @param cryptoFrameBuffer the buffered frames, sorted by offset
+     * @param nextOffset the next CRYPTO stream offset not yet passed to the upper layer
+     * @return the contiguous data starting at nextOffset
+     */
+    private byte[] getContiguousCryptoData(List<CryptoFrame> cryptoFrameBuffer, long nextOffset) {
+        SilentByteArrayOutputStream data = new SilentByteArrayOutputStream();
+        long coveredUpTo = nextOffset;
+        for (CryptoFrame frame : cryptoFrameBuffer) {
+            long frameOffset = frame.getOffset().getValue();
+            byte[] frameData = frame.getCryptoData().getValue();
+            if (frameOffset > coveredUpTo) {
+                break;
+            }
+            long frameEnd = frameOffset + frameData.length;
+            if (frameEnd > coveredUpTo) {
+                data.write(
+                        frameData,
+                        Math.toIntExact(coveredUpTo - frameOffset),
+                        Math.toIntExact(frameEnd - coveredUpTo));
+                coveredUpTo = frameEnd;
+            }
+        }
+        return data.toByteArray();
+    }
+
+    /**
+     * @param data a prefix of a CRYPTO stream, starting at a message boundary
+     * @return the length of the complete handshake messages at the start of data
+     */
+    private static int getCompleteHandshakeMessagesLength(byte[] data) {
+        int headerLength =
+                HandshakeByteLength.MESSAGE_TYPE + HandshakeByteLength.MESSAGE_LENGTH_FIELD;
+        int end = 0;
+        while (end + headerLength <= data.length) {
+            int messageLength =
+                    ((data[end + 1] & 0xff) << 16)
+                            | ((data[end + 2] & 0xff) << 8)
+                            | (data[end + 3] & 0xff);
+            if (end + headerLength + messageLength > data.length) {
+                break;
+            }
+            end += headerLength + messageLength;
+        }
+        return end;
     }
 
     private String cryptoBufferToString(List<CryptoFrame> cryptoFrameBuffer) {

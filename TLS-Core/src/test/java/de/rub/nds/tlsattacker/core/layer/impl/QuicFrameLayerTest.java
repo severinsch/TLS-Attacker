@@ -443,6 +443,29 @@ public class QuicFrameLayerTest extends AbstractLayerTest {
     }
 
     @Test
+    public void testCompleteMessagesInFrontOfAGapArePassedUp() throws IOException {
+        QuicFrameLayer frameLayer = tlsContext.getLayerStack().getLayer(QuicFrameLayer.class);
+        // No packet layer, so nothing to acknowledge.
+        quicContext.setTemporarilyDisabledAcks(true);
+
+        // A complete message (type 1, length 2) at 0..6, then a hole at 6..8
+        transportHandler.setFetchableByte(
+                DataConverter.hexStringToByteArray("06000601000002AABB" + "060804EEEEEEEE"));
+        frameLayer.receiveData();
+        HintedInputStream firstStream = frameLayer.getDataStream();
+        assertArrayEquals(
+                DataConverter.hexStringToByteArray("01000002AABB"),
+                firstStream.readChunk(firstStream.available()));
+
+        transportHandler.setFetchableByte(DataConverter.hexStringToByteArray("0606020200"));
+        frameLayer.receiveData();
+        HintedInputStream secondStream = frameLayer.getDataStream();
+        assertArrayEquals(
+                DataConverter.hexStringToByteArray("0200EEEEEEEE"),
+                secondStream.readChunk(secondStream.available()));
+    }
+
+    @Test
     public void testOverlappingRetransmittedCryptoFramesAreDeduplicated() throws IOException {
         QuicFrameLayer frameLayer = tlsContext.getLayerStack().getLayer(QuicFrameLayer.class);
         // No packet layer, so nothing to acknowledge.
