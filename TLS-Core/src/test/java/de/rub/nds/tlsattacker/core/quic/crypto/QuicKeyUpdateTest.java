@@ -32,6 +32,7 @@ import de.rub.nds.tlsattacker.core.quic.parser.packet.OneRTTPacketParser;
 import de.rub.nds.tlsattacker.core.state.Context;
 import de.rub.nds.tlsattacker.core.state.State;
 import de.rub.nds.tlsattacker.core.state.quic.QuicContext;
+import de.rub.nds.tlsattacker.core.workflow.action.InitiateQuicKeyUpdateAction;
 import de.rub.nds.tlsattacker.transport.ConnectionEndType;
 import java.io.ByteArrayInputStream;
 import java.security.NoSuchAlgorithmException;
@@ -110,6 +111,11 @@ public class QuicKeyUpdateTest {
     /** An endpoint with 1-RTT keys for both directions, using TLS_AES_128_GCM_SHA256. */
     private static Context endpoint(ConnectionEndType localEndType)
             throws CryptoException, NoSuchAlgorithmException {
+        return endpointState(localEndType).getContext();
+    }
+
+    private static State endpointState(ConnectionEndType localEndType)
+            throws CryptoException, NoSuchAlgorithmException {
         Config config = new Config();
         new QuicDelegate(true).applyDelegate(config);
         if (localEndType == ConnectionEndType.SERVER) {
@@ -117,7 +123,8 @@ public class QuicKeyUpdateTest {
             serverDelegate.setPort(4433);
             serverDelegate.applyDelegate(config);
         }
-        Context context = new State(config).getContext();
+        State state = new State(config);
+        Context context = state.getContext();
         assertEquals(localEndType, context.getConnection().getLocalConnectionEndType());
 
         context.getTlsContext().setSelectedCipherSuite(CipherSuite.TLS_AES_128_GCM_SHA256);
@@ -137,7 +144,7 @@ public class QuicKeyUpdateTest {
             quicContext.setSourceConnectionId(SERVER_CONNECTION_ID);
             quicContext.setDestinationConnectionId(CLIENT_CONNECTION_ID);
         }
-        return context;
+        return state;
     }
 
     /** Prepares, protects and serializes one 1-RTT packet, as the packet layer does. */
@@ -493,5 +500,17 @@ public class QuicKeyUpdateTest {
                 GOLDEN_SERVER_HP,
                 DataConverter.bytesToRawHexString(
                         quicContext.getApplicationServerHeaderProtectionKey()));
+    }
+
+    @Test
+    public void testInitiateQuicKeyUpdateActionUpdatesTheKeys() throws Exception {
+        State state = endpointState(ConnectionEndType.CLIENT);
+        QuicContext quicContext = state.getContext().getQuicContext();
+
+        new InitiateQuicKeyUpdateAction(state.getContext().getConnection().getAlias())
+                .execute(state);
+
+        assertEquals(1, quicContext.getApplicationKeyPhase(ConnectionEndType.CLIENT));
+        assertEquals(1, quicContext.getApplicationKeyPhase(ConnectionEndType.SERVER));
     }
 }
