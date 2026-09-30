@@ -23,6 +23,7 @@ import de.rub.nds.tlsattacker.core.layer.SpecificSendLayerConfiguration;
 import de.rub.nds.tlsattacker.core.layer.constant.ImplementedLayers;
 import de.rub.nds.tlsattacker.core.layer.hints.QuicFrameLayerHint;
 import de.rub.nds.tlsattacker.core.layer.stream.HintedInputStream;
+import de.rub.nds.tlsattacker.core.quic.constants.QuicPacketType;
 import de.rub.nds.tlsattacker.core.quic.frame.CryptoFrame;
 import de.rub.nds.tlsattacker.core.quic.frame.HandshakeDoneFrame;
 import de.rub.nds.tlsattacker.core.quic.frame.PaddingFrame;
@@ -412,6 +413,33 @@ public class QuicFrameLayerTest extends AbstractLayerTest {
                 DataConverter.hexStringToByteArray("11111111" + "33333333" + "22222222"),
                 delivered,
                 "Once gap free, the whole CRYPTO stream is passed up in offset order");
+    }
+
+    @Test
+    public void testCryptoFramesAreReassembledPerEncryptionLevel() throws IOException {
+        QuicFrameLayer frameLayer = tlsContext.getLayerStack().getLayer(QuicFrameLayer.class);
+        // No packet layer, so nothing to acknowledge.
+        quicContext.setTemporarilyDisabledAcks(true);
+        quicContext.setHandshakeSecretsInitialized(true);
+        quicContext.setApplicationSecretsInitialized(true);
+
+        // A Handshake packet that arrives after the application secrets exist
+        quicContext.getReceivedPackets().add(QuicPacketType.HANDSHAKE_PACKET);
+        transportHandler.setFetchableByte(DataConverter.hexStringToByteArray("06000411111111"));
+        frameLayer.receiveData();
+        HintedInputStream handshakeStream = frameLayer.getDataStream();
+        assertArrayEquals(
+                DataConverter.hexStringToByteArray("11111111"),
+                handshakeStream.readChunk(handshakeStream.available()));
+
+        // must not have advanced the 1-RTT CRYPTO stream
+        quicContext.getReceivedPackets().add(QuicPacketType.ONE_RTT_PACKET);
+        transportHandler.setFetchableByte(DataConverter.hexStringToByteArray("06000422222222"));
+        frameLayer.receiveData();
+        HintedInputStream applicationStream = frameLayer.getDataStream();
+        assertArrayEquals(
+                DataConverter.hexStringToByteArray("22222222"),
+                applicationStream.readChunk(applicationStream.available()));
     }
 
     @Test

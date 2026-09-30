@@ -57,7 +57,9 @@ import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -86,7 +88,8 @@ public class QuicFrameLayer
     private long handshakePhaseWriteCryptoFrameOffset = 0;
     private long applicationPhaseWriteCryptoFrameOffset = 0;
 
-    private List<CryptoFrame> cryptoFrameBuffer = new ArrayList<>();
+    private final Map<QuicPacketType, List<CryptoFrame>> cryptoFrameBuffers =
+            new EnumMap<>(QuicPacketType.class);
 
     public QuicFrameLayer(Context context) {
         super(ImplementedLayers.QUICFRAME);
@@ -271,6 +274,9 @@ public class QuicFrameLayer
         PushbackInputStream inputStream = new PushbackInputStream(dataStream);
         RecordLayerHint recordLayerHint = null;
         boolean isAckEliciting = false;
+        QuicPacketType cryptoLevel = getReceivingEncryptionLevel();
+        List<CryptoFrame> cryptoFrameBuffer =
+                cryptoFrameBuffers.computeIfAbsent(cryptoLevel, level -> new ArrayList<>());
 
         if (inputStream.available() == 0) {
             throw new EndOfStreamException();
@@ -340,14 +346,7 @@ public class QuicFrameLayer
         // passed to the upper layer without gaps
         SilentByteArrayOutputStream outputStream = new SilentByteArrayOutputStream();
         if (!cryptoFrameBuffer.isEmpty()) {
-            long nextOffset;
-            if (!quicContext.isHandshakeSecretsInitialized()) {
-                nextOffset = initialPhaseExpectedCryptoFrameOffset;
-            } else if (!quicContext.isApplicationSecretsInitialized()) {
-                nextOffset = handshakePhaseExpectedCryptoFrameOffset;
-            } else {
-                nextOffset = applicationPhaseExpectedCryptoFrameOffset;
-            }
+            long nextOffset = getExpectedCryptoFrameOffset(cryptoLevel);
             cryptoFrameBuffer.sort(Comparator.comparingLong(frame -> frame.getOffset().getValue()));
 
             // Frames entirely behind the delivered offset are retransmissions (RFC 9000 section
@@ -358,7 +357,7 @@ public class QuicFrameLayer
                             frame.getOffset().getValue() + frame.getLength().getValue()
                                     <= deliveredOffset);
 
-            if (isCryptoBufferGapFree(nextOffset)) {
+            if (isCryptoBufferGapFree(cryptoFrameBuffer, nextOffset)) {
                 for (CryptoFrame frame : cryptoFrameBuffer) {
                     long frameOffset = frame.getOffset().getValue();
                     byte[] frameData = frame.getCryptoData().getValue();
@@ -382,20 +381,13 @@ public class QuicFrameLayer
                     }
                 }
                 cryptoFrameBuffer.clear();
-
-                if (!quicContext.isHandshakeSecretsInitialized()) {
-                    initialPhaseExpectedCryptoFrameOffset = nextOffset;
-                } else if (!quicContext.isApplicationSecretsInitialized()) {
-                    handshakePhaseExpectedCryptoFrameOffset = nextOffset;
-                } else {
-                    applicationPhaseExpectedCryptoFrameOffset = nextOffset;
-                }
+                setExpectedCryptoFrameOffset(cryptoLevel, nextOffset);
             } else {
                 // The upper layer keeps no partial-message state, so deliver only a gap-free
                 // stream.
                 LOGGER.warn(
                         "Missing CryptoFrames in buffer: {}, nextOffset={}",
-                        cryptoBufferToString(),
+                        cryptoBufferToString(cryptoFrameBuffer),
                         nextOffset);
             }
         }
@@ -419,12 +411,49 @@ public class QuicFrameLayer
     }
 
     /**
+     * The encryption level of the packet whose frames are being read. Each level has its own CRYPTO
+     * stream (RFC 9001 section 4.1.3). Without a packet layer, the level follows the secrets.
+     */
+    private QuicPacketType getReceivingEncryptionLevel() {
+        if (!quicContext.getReceivedPackets().isEmpty()) {
+            QuicPacketType packetType = quicContext.getReceivedPackets().getLast();
+            if (packetType == QuicPacketType.INITIAL_PACKET
+                    || packetType == QuicPacketType.HANDSHAKE_PACKET
+                    || packetType == QuicPacketType.ONE_RTT_PACKET) {
+                return packetType;
+            }
+        }
+        if (!quicContext.isHandshakeSecretsInitialized()) {
+            return QuicPacketType.INITIAL_PACKET;
+        } else if (!quicContext.isApplicationSecretsInitialized()) {
+            return QuicPacketType.HANDSHAKE_PACKET;
+        }
+        return QuicPacketType.ONE_RTT_PACKET;
+    }
+
+    private long getExpectedCryptoFrameOffset(QuicPacketType level) {
+        return switch (level) {
+            case INITIAL_PACKET -> initialPhaseExpectedCryptoFrameOffset;
+            case HANDSHAKE_PACKET -> handshakePhaseExpectedCryptoFrameOffset;
+            default -> applicationPhaseExpectedCryptoFrameOffset;
+        };
+    }
+
+    private void setExpectedCryptoFrameOffset(QuicPacketType level, long offset) {
+        switch (level) {
+            case INITIAL_PACKET -> initialPhaseExpectedCryptoFrameOffset = offset;
+            case HANDSHAKE_PACKET -> handshakePhaseExpectedCryptoFrameOffset = offset;
+            default -> applicationPhaseExpectedCryptoFrameOffset = offset;
+        }
+    }
+
+    /**
      * Whether the buffered CRYPTO frames cover the stream from nextOffset without a hole.
      *
      * @param nextOffset the next CRYPTO stream offset not yet passed to the upper layer
      * @return true if the buffer can be passed up as one contiguous chunk
      */
-    private boolean isCryptoBufferGapFree(long nextOffset) {
+    private boolean isCryptoBufferGapFree(List<CryptoFrame> cryptoFrameBuffer, long nextOffset) {
         // cryptoFrameBuffer is sorted by offset by the caller
         long coveredUpTo = nextOffset;
         for (CryptoFrame frame : cryptoFrameBuffer) {
@@ -439,7 +468,7 @@ public class QuicFrameLayer
         return true;
     }
 
-    private String cryptoBufferToString() {
+    private String cryptoBufferToString(List<CryptoFrame> cryptoFrameBuffer) {
         return cryptoFrameBuffer.stream()
                 .map(
                         cryptoFrame ->
@@ -505,7 +534,7 @@ public class QuicFrameLayer
      * resetting the connection.
      */
     public void clearCryptoFrameBuffer() {
-        cryptoFrameBuffer.clear();
+        cryptoFrameBuffers.clear();
         initialPhaseExpectedCryptoFrameOffset = 0;
         handshakePhaseExpectedCryptoFrameOffset = 0;
         applicationPhaseExpectedCryptoFrameOffset = 0;
