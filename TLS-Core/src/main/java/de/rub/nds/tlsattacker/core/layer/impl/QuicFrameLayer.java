@@ -11,6 +11,7 @@ package de.rub.nds.tlsattacker.core.layer.impl;
 import de.rub.nds.protocol.exception.EndOfStreamException;
 import de.rub.nds.protocol.exception.TimeoutException;
 import de.rub.nds.protocol.util.SilentByteArrayOutputStream;
+import de.rub.nds.tlsattacker.core.constants.HandshakeMessageType;
 import de.rub.nds.tlsattacker.core.constants.ProtocolMessageType;
 import de.rub.nds.tlsattacker.core.layer.AcknowledgingProtocolLayer;
 import de.rub.nds.tlsattacker.core.layer.LayerConfiguration;
@@ -134,6 +135,9 @@ public class QuicFrameLayer
                 case HANDSHAKE:
                     if (hintedFirstMessage) {
                         packetLayerHint = new QuicPacketLayerHint(QuicPacketType.INITIAL_PACKET);
+                    } else if (quicContext.isApplicationSecretsInitialized()
+                            && isPostHandshakeMessage(data)) {
+                        packetLayerHint = new QuicPacketLayerHint(QuicPacketType.ONE_RTT_PACKET);
                     } else {
                         packetLayerHint = new QuicPacketLayerHint(QuicPacketType.HANDSHAKE_PACKET);
                     }
@@ -502,6 +506,24 @@ public class QuicFrameLayer
                 addProducedContainer(frame);
                 getLowerLayer().sendData(hint, bytes);
             }
+        }
+    }
+
+    /**
+     * Whether the bytes start a post-handshake message (RFC 8446 section 4.6), which QUIC sends at
+     * the application encryption level (RFC 9001 section 4.1.3).
+     */
+    private static boolean isPostHandshakeMessage(byte[] data) {
+        if (data.length == 0) {
+            return false;
+        }
+        switch (HandshakeMessageType.getMessageType(data[0])) {
+            case NEW_SESSION_TICKET:
+            case CERTIFICATE_REQUEST:
+            case KEY_UPDATE:
+                return true;
+            default:
+                return false;
         }
     }
 

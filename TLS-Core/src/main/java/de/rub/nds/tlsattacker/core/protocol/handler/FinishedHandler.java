@@ -171,6 +171,19 @@ public class FinishedHandler extends HandshakeMessageHandler<FinishedMessage> {
             } else {
                 adjustApplicationTrafficSecrets();
                 setServerRecordCipher(Tls13KeySetType.APPLICATION_TRAFFIC_SECRETS);
+                // A server sending its own Finished needs its 1-RTT keys too.
+                if (tlsContext.getConfig().getDefaultLayerConfiguration() == StackConfiguration.QUIC
+                        && !tlsContext
+                                .getContext()
+                                .getQuicContext()
+                                .isApplicationSecretsInitialized()) {
+                    try {
+                        QuicPacketCryptoComputations.calculateApplicationSecrets(
+                                tlsContext.getContext());
+                    } catch (NoSuchAlgorithmException | CryptoException e) {
+                        LOGGER.error("Could not initialize application secrets: ", e);
+                    }
+                }
             }
         }
     }

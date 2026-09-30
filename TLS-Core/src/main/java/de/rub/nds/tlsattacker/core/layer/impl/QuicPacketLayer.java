@@ -62,7 +62,8 @@ public class QuicPacketLayer
     private final QuicDecryptor decryptor;
     private final QuicEncryptor encryptor;
 
-    private final Map<QuicPacketType, ArrayList<QuicPacket>> receivedPacketBuffer = new HashMap<>();
+    /** Package-private for tests. */
+    final Map<QuicPacketType, ArrayList<QuicPacket>> receivedPacketBuffer = new HashMap<>();
 
     public QuicPacketLayer(Context context) {
         super(ImplementedLayers.QUICPACKET);
@@ -666,14 +667,16 @@ public class QuicPacketLayer
         }
     }
 
-    private QuicPacketType getPacketTypeToProcessNext() {
+    QuicPacketType getPacketTypeToProcessNext() {
         if (!receivedPacketBuffer.get(QuicPacketType.INITIAL_PACKET).isEmpty()
                 && quicContext.isInitialSecretsInitialized()
                 && !quicContext.isHandshakeSecretsInitialized()) {
             return QuicPacketType.INITIAL_PACKET;
         } else if (!receivedPacketBuffer.get(QuicPacketType.HANDSHAKE_PACKET).isEmpty()
-                && quicContext.isHandshakeSecretsInitialized()
-                && !quicContext.isApplicationSecretsInitialized()) {
+                && quicContext.isHandshakeSecretsInitialized()) {
+            // Handshake packets stay live until the handshake is confirmed (RFC 9001 section
+            // 4.9.2); a
+            // server's application secrets exist before the client's Finished arrives.
             return QuicPacketType.HANDSHAKE_PACKET;
         } else if (!receivedPacketBuffer.get(QuicPacketType.ONE_RTT_PACKET).isEmpty()
                 && quicContext.isApplicationSecretsInitialized()) {

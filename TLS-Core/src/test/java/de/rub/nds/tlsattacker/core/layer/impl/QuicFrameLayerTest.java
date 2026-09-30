@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import de.rub.nds.modifiablevariable.util.DataConverter;
 import de.rub.nds.protocol.exception.CryptoException;
 import de.rub.nds.tlsattacker.core.config.delegate.QuicDelegate;
+import de.rub.nds.tlsattacker.core.constants.HandshakeMessageType;
 import de.rub.nds.tlsattacker.core.constants.ProtocolMessageType;
 import de.rub.nds.tlsattacker.core.layer.LayerStack;
 import de.rub.nds.tlsattacker.core.layer.SpecificSendLayerConfiguration;
@@ -327,6 +328,79 @@ public class QuicFrameLayerTest extends AbstractLayerTest {
 
         assertDoesNotThrow(frameLayer::receiveData);
         assertEquals(List.of(), frameLayer.getLayerResult().getUsedContainers());
+    }
+
+    @Test
+    public void testPostHandshakeMessageUsesTheApplicationCryptoStream() throws IOException {
+        QuicFrameLayer frameLayer = tlsContext.getLayerStack().getLayer(QuicFrameLayer.class);
+        QuicFrameLayerHint handshakeHint =
+                new QuicFrameLayerHint(ProtocolMessageType.HANDSHAKE, false);
+
+        // A Handshake-level message first, to advance the Handshake CRYPTO stream
+        frameLayer.setLayerConfiguration(
+                new SpecificSendLayerConfiguration<>(
+                        ImplementedLayers.QUICFRAME, new ArrayList<>()));
+        frameLayer.sendData(handshakeHint, encryptedExtensions(64));
+        frameLayer.clear();
+        transportHandler.resetOutputStream();
+
+        quicContext.setApplicationSecretsInitialized(true);
+        frameLayer.setLayerConfiguration(
+                new SpecificSendLayerConfiguration<>(
+                        ImplementedLayers.QUICFRAME, new ArrayList<>()));
+        frameLayer.sendData(handshakeHint, newSessionTicket(32));
+
+        CryptoFrame frame =
+                (CryptoFrame) frameLayer.getLayerResult().getUsedContainers().getFirst();
+        assertEquals(
+                0L,
+                frame.getOffsetConfig(),
+                "A post-handshake message starts its own CRYPTO stream at offset 0");
+    }
+
+    @Test
+    public void testCertificateRequestDuringHandshakeStaysOnTheHandshakeStream()
+            throws IOException {
+        QuicFrameLayer frameLayer = tlsContext.getLayerStack().getLayer(QuicFrameLayer.class);
+        QuicFrameLayerHint handshakeHint =
+                new QuicFrameLayerHint(ProtocolMessageType.HANDSHAKE, false);
+
+        frameLayer.setLayerConfiguration(
+                new SpecificSendLayerConfiguration<>(
+                        ImplementedLayers.QUICFRAME, new ArrayList<>()));
+        frameLayer.sendData(handshakeHint, encryptedExtensions(64));
+        frameLayer.clear();
+        transportHandler.resetOutputStream();
+
+        frameLayer.setLayerConfiguration(
+                new SpecificSendLayerConfiguration<>(
+                        ImplementedLayers.QUICFRAME, new ArrayList<>()));
+        frameLayer.sendData(handshakeHint, certificateRequest(32));
+
+        CryptoFrame frame =
+                (CryptoFrame) frameLayer.getLayerResult().getUsedContainers().getFirst();
+        assertEquals(
+                64L,
+                frame.getOffsetConfig(),
+                "Without application secrets the Handshake CRYPTO stream continues");
+    }
+
+    private static byte[] handshakeMessage(HandshakeMessageType type, int length) {
+        byte[] message = new byte[length];
+        message[0] = type.getValue();
+        return message;
+    }
+
+    private static byte[] encryptedExtensions(int length) {
+        return handshakeMessage(HandshakeMessageType.ENCRYPTED_EXTENSIONS, length);
+    }
+
+    private static byte[] newSessionTicket(int length) {
+        return handshakeMessage(HandshakeMessageType.NEW_SESSION_TICKET, length);
+    }
+
+    private static byte[] certificateRequest(int length) {
+        return handshakeMessage(HandshakeMessageType.CERTIFICATE_REQUEST, length);
     }
 
     @Test

@@ -11,6 +11,7 @@ package de.rub.nds.tlsattacker.core.layer.impl;
 import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import de.rub.nds.modifiablevariable.util.DataConverter;
 import de.rub.nds.protocol.exception.CryptoException;
@@ -358,5 +359,35 @@ public class QuicPacketLayerTest extends AbstractLayerTest {
         assertArrayEquals(
                 serverSourceConnectionId, retained1.getDestinationConnectionId().getValue());
         assertEquals(1, retained1.getPlainPacketNumber());
+    }
+
+    @Test
+    public void testHandshakePacketsStillProcessedAfterApplicationSecrets() {
+        setUpInitialSecrets();
+        QuicPacketLayer layer =
+                (QuicPacketLayer) tlsContext.getLayerStack().getLayer(QuicPacketLayer.class);
+        layer.receivedPacketBuffer.get(QuicPacketType.HANDSHAKE_PACKET).add(new HandshakePacket());
+
+        quicContext.setHandshakeSecretsInitialized(true);
+        quicContext.setApplicationSecretsInitialized(true);
+
+        assertEquals(QuicPacketType.HANDSHAKE_PACKET, layer.getPacketTypeToProcessNext());
+    }
+
+    @Test
+    public void testOneRttPacketsWaitForHandshakePacketsAndSecrets() {
+        setUpInitialSecrets();
+        QuicPacketLayer layer =
+                (QuicPacketLayer) tlsContext.getLayerStack().getLayer(QuicPacketLayer.class);
+        layer.receivedPacketBuffer.get(QuicPacketType.ONE_RTT_PACKET).add(new OneRTTPacket());
+
+        quicContext.setHandshakeSecretsInitialized(true);
+        assertNull(layer.getPacketTypeToProcessNext());
+
+        quicContext.setApplicationSecretsInitialized(true);
+        assertEquals(QuicPacketType.ONE_RTT_PACKET, layer.getPacketTypeToProcessNext());
+
+        layer.receivedPacketBuffer.get(QuicPacketType.HANDSHAKE_PACKET).add(new HandshakePacket());
+        assertEquals(QuicPacketType.HANDSHAKE_PACKET, layer.getPacketTypeToProcessNext());
     }
 }
