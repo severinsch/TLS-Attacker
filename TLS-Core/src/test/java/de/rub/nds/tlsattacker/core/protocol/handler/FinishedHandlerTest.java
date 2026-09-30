@@ -18,7 +18,9 @@ import de.rub.nds.tlsattacker.core.constants.CipherSuite;
 import de.rub.nds.tlsattacker.core.constants.ExtensionType;
 import de.rub.nds.tlsattacker.core.constants.ProtocolVersion;
 import de.rub.nds.tlsattacker.core.constants.Tls13KeySetType;
+import de.rub.nds.tlsattacker.core.layer.constant.StackConfiguration;
 import de.rub.nds.tlsattacker.core.protocol.message.FinishedMessage;
+import de.rub.nds.tlsattacker.core.state.quic.QuicContext;
 import de.rub.nds.tlsattacker.transport.ConnectionEndType;
 import org.junit.jupiter.api.Test;
 
@@ -319,5 +321,27 @@ public class FinishedHandlerTest
         assertArrayEquals(null, tlsContext.getClientApplicationTrafficSecret());
         assertArrayEquals(null, tlsContext.getServerApplicationTrafficSecret());
         assertArrayEquals(null, tlsContext.getMasterSecret());
+    }
+
+    @Test
+    public void testRepeatedServerFinishedKeepsTheQuicKeyUpdateState() {
+        FinishedMessage message = new FinishedMessage();
+        tlsContext.getConfig().setDefaultLayerConfiguration(StackConfiguration.QUIC);
+        tlsContext.setTalkingConnectionEndType(ConnectionEndType.SERVER);
+        tlsContext.setConnection(new OutboundConnection());
+        tlsContext.setSelectedProtocolVersion(ProtocolVersion.TLS13);
+        tlsContext.setHandshakeSecret(new byte[] {0, 1, 2, 3, 4});
+        tlsContext.setSelectedCipherSuite(CipherSuite.TLS_AES_128_GCM_SHA256);
+        message.setVerifyData(new byte[] {0, 1, 2, 3, 4});
+        QuicContext quicContext = tlsContext.getContext().getQuicContext();
+        quicContext.setApplicationSecretsInitialized(true);
+        quicContext.setApplicationKeyPhase(ConnectionEndType.SERVER, 1);
+        byte[] updatedKey = new byte[] {9, 9, 9};
+        quicContext.setApplicationServerKey(updatedKey);
+
+        handler.adjustContext(message);
+
+        assertEquals(1, quicContext.getApplicationKeyPhase(ConnectionEndType.SERVER));
+        assertArrayEquals(updatedKey, quicContext.getApplicationServerKey());
     }
 }

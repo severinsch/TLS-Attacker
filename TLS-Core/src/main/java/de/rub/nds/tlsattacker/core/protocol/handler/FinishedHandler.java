@@ -50,8 +50,13 @@ public class FinishedHandler extends HandshakeMessageHandler<FinishedMessage> {
                 if (tlsContext.getTalkingConnectionEndType() == ConnectionEndType.SERVER) {
                     adjustApplicationTrafficSecrets();
                     setServerRecordCipher(Tls13KeySetType.APPLICATION_TRAFFIC_SECRETS);
+                    // Deriving again would roll back any key update.
                     if (tlsContext.getConfig().getDefaultLayerConfiguration()
-                            == StackConfiguration.QUIC) {
+                                    == StackConfiguration.QUIC
+                            && !tlsContext
+                                    .getContext()
+                                    .getQuicContext()
+                                    .isApplicationSecretsInitialized()) {
                         try {
                             QuicPacketCryptoComputations.calculateApplicationSecrets(
                                     tlsContext.getContext());
